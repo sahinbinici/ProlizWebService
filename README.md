@@ -232,5 +232,6 @@ Run tests with: `mvn test`
 4. **Monitoring**: Add Actuator endpoints and Prometheus metrics
 5. **Documentation**: Add OpenAPI/Swagger documentation
 6. **Circuit Breaker**: Add Hystrix or Resilience4j for fault tolerance
-#   P r o l i z W e b S e r v i c e  
+#   P r o l i z W e b S e r v i c e 
+ 
  
