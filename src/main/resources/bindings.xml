@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bindings
+        xmlns="https://jakarta.ee/xml/ns/jaxws"
+        xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+        xmlns:jaxb="https://jakarta.ee/xml/ns/jaxb"
+        xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+        version="3.0"
+        wsdlLocation="https://obs.gantep.edu.tr/proliz_obs_lms_miner/proliz_obs_lms_miner.asmx?wsdl">
+
+    <bindings node="wsdl:definitions">
+        <jaxb:globalBindings>
+            <jaxb:nameXmlTransform>
+                <jaxb:typeName suffix="Type"/>
+                <jaxb:elementName suffix="Element"/>
+                <jaxb:modelGroupName suffix="Group"/>
+                <jaxb:anonymousTypeName suffix="InnerType"/>
+            </jaxb:nameXmlTransform>
+            <jaxb:serializable uid="1"/>
+            <!-- Enable automatic collision resolution -->
+            <jaxb:property collisionStrategy="GENERATE_SUFFIX"/>
+        </jaxb:globalBindings>
+
+        <!-- Global schema bindings -->
+        <bindings node="wsdl:types/xsd:schema">
+            <jaxb:schemaBindings>
+                <jaxb:package name="com.prolizwebservices.generated"/>
+            </jaxb:schemaBindings>
+        </bindings>
+    </bindings>
+</bindings>
