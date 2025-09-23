@@ -36,8 +36,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
  */
 @RestController
 @RequestMapping("/api/data")
-@CrossOrigin(origins = {"http://localhost:3000", "http://localhost:8080"}, 
-            methods = {RequestMethod.GET, RequestMethod.POST}, 
+@CrossOrigin(origins = {"*"}, 
+            methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS}, 
             allowCredentials = "false")
 @Tag(name = "ProlizWebServices", description = "SOAP to REST adapter for Gaziantep University Student Information System")
 public class DataController {

@@ -19,8 +19,8 @@ import com.prolizwebservices.service.DataCacheService;
  */
 @RestController
 @RequestMapping("/")
-@CrossOrigin(origins = {"http://localhost:3000", "http://localhost:8080", "http://193.140.136.26:8080"}, 
-            methods = {RequestMethod.GET, RequestMethod.POST}, 
+@CrossOrigin(origins = {"*"}, 
+            methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS}, 
             allowCredentials = "false")
 public class HealthController {
 

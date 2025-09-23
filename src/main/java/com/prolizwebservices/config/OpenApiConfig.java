@@ -19,7 +19,7 @@ import io.swagger.v3.oas.models.servers.Server;
 @Configuration
 public class OpenApiConfig {
 
-    @Value("${server.servlet.context-path:/proliz}")
+    @Value("${server.servlet.context-path:/ProlizWebServices}")
     private String contextPath;
 
     @Bean
@@ -47,14 +47,17 @@ public class OpenApiConfig {
                                 .url("https://opensource.org/licenses/MIT")))
                 .servers(List.of(
                         new Server()
+                                .url("http://193.140.136.26:8080" + contextPath)
+                                .description("Production Server (HTTP)"),
+                        new Server()
                                 .url("http://localhost:8080" + contextPath)
                                 .description("Development Server"),
                         new Server()
-                                .url("http://193.140.136.26:8080" + contextPath)
-                                .description("Production Server"),
+                                .url("https://193.140.136.26:8443" + contextPath)
+                                .description("Production Server (HTTPS)"),
                         new Server()
                                 .url("https://proliz.gantep.edu.tr" + contextPath)
-                                .description("Production HTTPS Server")
+                                .description("University Server")
                 ));
     }
 }
