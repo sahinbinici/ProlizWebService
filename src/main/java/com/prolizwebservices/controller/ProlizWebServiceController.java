@@ -1,7 +1,9 @@
 package com.prolizwebservices.controller;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -18,6 +20,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.prolizwebservices.client.OgrenciWebServiceClient;
 import com.prolizwebservices.exception.ValidationException;
+import com.prolizwebservices.model.Ders;
+import com.prolizwebservices.model.Ogrenci;
+import com.prolizwebservices.model.OgretimElemani;
+import com.prolizwebservices.util.XmlParser;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -34,10 +40,12 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class ProlizWebServiceController {
 
     private final OgrenciWebServiceClient webServiceClient;
+    private final XmlParser xmlParser;
 
     @Autowired
-    public ProlizWebServiceController(OgrenciWebServiceClient webServiceClient) {
+    public ProlizWebServiceController(OgrenciWebServiceClient webServiceClient, XmlParser xmlParser) {
         this.webServiceClient = webServiceClient;
+        this.xmlParser = xmlParser;
     }
     
     // 1. Academic Staff Authentication
@@ -74,7 +82,7 @@ public class ProlizWebServiceController {
         @ApiResponse(responseCode = "400", description = "Invalid input parameters"),
         @ApiResponse(responseCode = "503", description = "Remote SOAP service unavailable")
     })
-    @PostMapping(value = "/ogrenci/sifre-kontrol", produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_XML_VALUE})
+    @PostMapping(value = "/ogrenci/sifre-kontrol", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> ogrenciSifreKontrol(
             @Parameter(description = "Student number", required = true, example = "20230001")
             @RequestParam String ogrenciNo,
@@ -106,9 +114,25 @@ public class ProlizWebServiceController {
         @ApiResponse(responseCode = "503", description = "Remote SOAP service unavailable")
     })
     @GetMapping("/uzaktan-egitim/dersler")
-    public ResponseEntity<String> getUzaktanEgitimDersleri() {
-        String result = webServiceClient.getUzaktanEgitimDersleri();
-        return ResponseEntity.ok(result);
+    public ResponseEntity<Map<String, Object>> getUzaktanEgitimDersleri(
+            @Parameter(description = "Maximum number of courses to return (default: 50)", example = "50")
+            @RequestParam(defaultValue = "50") int limit) {
+        
+        String xmlResult = webServiceClient.getUzaktanEgitimDersleri();
+        List<Ders> allDersler = xmlParser.parseDersler(xmlResult);
+        
+        // Limit uygula (Swagger UI için)
+        List<Ders> limitedDersler = allDersler.stream()
+            .limit(Math.min(limit, 100)) // Max 100 ile sınırla
+            .collect(Collectors.toList());
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("dersler", limitedDersler);
+        response.put("toplamDers", allDersler.size());
+        response.put("gosterilenDers", limitedDersler.size());
+        response.put("message", "Swagger UI performansı için " + limitedDersler.size() + " ders gösteriliyor");
+        
+        return ResponseEntity.ok(response);
     }
 
     // 4. Students in Distance Education Course
@@ -117,13 +141,14 @@ public class ProlizWebServiceController {
         description = "Retrieves students enrolled in a specific distance education course."
     )
     @GetMapping("/uzaktan-egitim/ders/{dersHarID}/ogrenciler")
-    public ResponseEntity<String> getUzaktanEgitimDersiAlanOgrenciler(
+    public ResponseEntity<List<Ogrenci>> getUzaktanEgitimDersiAlanOgrenciler(
             @Parameter(description = "Ders_Hard_ID", required = true, example = "BIL101")
             @PathVariable String dersHarID) {
         validateNotEmpty(dersHarID, "dersHarID");
         
-        String result = webServiceClient.getUzaktanEgitimDersiAlanOgrencileri(dersHarID);
-        return ResponseEntity.ok(result);
+        String xmlResult = webServiceClient.getUzaktanEgitimDersiAlanOgrencileri(dersHarID);
+        List<Ogrenci> ogrenciler = xmlParser.parseOgrenciler(xmlResult, dersHarID);
+        return ResponseEntity.ok(ogrenciler);
     }
 
     // 5. Course Instructor
@@ -132,15 +157,16 @@ public class ProlizWebServiceController {
         description = "Retrieves the instructor information for a specific course."
     )
     @GetMapping("/ders/{dersHarID}/ogretim-elemani")
-    public ResponseEntity<String> getDersiVerenOgretimElemani(
+    public ResponseEntity<List<OgretimElemani>> getDersiVerenOgretimElemani(
             @Parameter(description = "Ders_Hard_ID", required = true, example = "2838793")
             @PathVariable String dersHarID) {
         validateNotEmpty(dersHarID, "dersHarID");
         
         // ⚠️ DEPRECATED: Artık DataController kullanın - bu endpoint cache kullanmıyor!
         // Geçici olarak eski yöntemi kullan
-        String result = webServiceClient.getDersiVerenOgretimElemani(dersHarID);
-        return ResponseEntity.ok(result);
+        String xmlResult = webServiceClient.getDersiVerenOgretimElemani(dersHarID);
+        List<OgretimElemani> ogretimElemanlari = xmlParser.parseOgretimElemanlari(xmlResult);
+        return ResponseEntity.ok(ogretimElemanlari);
     }
 
     // Validation helper method

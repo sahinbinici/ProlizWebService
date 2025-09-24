@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prolizwebservices.model.Ders;
@@ -76,6 +77,49 @@ public class DataController {
         status.put("cacheEfficiency", totalCourses == 0 ? 0 : (cachedCourses * 100) / totalCourses);
         
         return ResponseEntity.ok(status);
+    }
+
+    /**
+     * 📄 Tüm dersleri sayfalı şekilde listele (Swagger UI için optimize)
+     */
+    @Operation(
+        summary = "Get All Courses with Pagination",
+        description = "Returns paginated list of all courses for better performance"
+    )
+    @GetMapping("/dersler")
+    public ResponseEntity<Map<String, Object>> getAllDersler(
+            @Parameter(description = "Page number (0-based)", example = "0")
+            @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Page size (max 100)", example = "20")
+            @RequestParam(defaultValue = "20") int size) {
+        
+        if (!cacheService.isInitialized()) {
+            return ResponseEntity.accepted().build();
+        }
+        
+        List<Ders> allDersler = cacheService.getAllDersler();
+        
+        // Pagination uygula
+        int totalElements = allDersler.size();
+        int pageSize = Math.min(size, 100); // Max 100
+        int startIndex = page * pageSize;
+        int endIndex = Math.min(startIndex + pageSize, totalElements);
+        
+        List<Ders> pagedDersler = Collections.emptyList();
+        if (startIndex < totalElements) {
+            pagedDersler = allDersler.subList(startIndex, endIndex);
+        }
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("content", pagedDersler);
+        response.put("page", page);
+        response.put("size", pageSize);
+        response.put("totalElements", totalElements);
+        response.put("totalPages", (int) Math.ceil((double) totalElements / pageSize));
+        response.put("first", page == 0);
+        response.put("last", endIndex >= totalElements);
+        
+        return ResponseEntity.ok(response);
     }
 
     /**
@@ -290,6 +334,249 @@ public class DataController {
         Map<String, Long> bolumGrubu = dersler.stream()
             .collect(Collectors.groupingBy(Ders::getBolAd, Collectors.counting()));
         result.put("bolumBazinda", bolumGrubu);
+        
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 📚 Öğretim elemanının verdiği derslerin listesini getir
+     */
+    @Operation(
+        summary = "Get Courses Taught by Instructor",
+        description = "Returns list of courses taught by a specific instructor using sicil number"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Courses retrieved successfully"),
+        @ApiResponse(responseCode = "202", description = "Cache still loading, try again later"),
+        @ApiResponse(responseCode = "404", description = "Instructor not found")
+    })
+    @GetMapping("/ogretim-elemani/{sicilNo}/dersler")
+    public ResponseEntity<Map<String, Object>> getDerslerByOgretimElemani(
+            @Parameter(description = "Instructor registry number", required = true, example = "12345")
+            @PathVariable String sicilNo) {
+        
+        if (!cacheService.isInitialized()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("status", "CACHE_LOADING");
+            result.put("message", "Cache is still loading, please try again in a few moments");
+            return ResponseEntity.status(202).body(result);
+        }
+        
+        // 1. Öğretim elemanını bul
+        OgretimElemani ogretimElemani = cacheService.getOgretimElemaniBySicil(sicilNo);
+        if (ogretimElemani == null) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("error", "Öğretim elemanı bulunamadı");
+            result.put("sicilNo", sicilNo);
+            return ResponseEntity.status(404).body(result);
+        }
+        
+        // 2. Bu öğretim elemanının verdiği dersleri bul
+        List<Ders> tumDersler = cacheService.getAllDersler();
+        List<Ders> ogretimElemaniDersleri = tumDersler.stream()
+            .filter(ders -> ders.getOgretimElemaniTC() != null && 
+                           ders.getOgretimElemaniTC().equals(ogretimElemani.getTcKimlikNo()))
+            .collect(Collectors.toList());
+        
+        // 3. İstatistikler hesapla
+        Map<String, Long> fakulteGrubu = ogretimElemaniDersleri.stream()
+            .filter(ders -> ders.getFakAd() != null)
+            .collect(Collectors.groupingBy(Ders::getFakAd, Collectors.counting()));
+            
+        Map<String, Long> donemGrubu = ogretimElemaniDersleri.stream()
+            .filter(ders -> ders.getDonemAd() != null)
+            .collect(Collectors.groupingBy(Ders::getDonemAd, Collectors.counting()));
+        
+        // 4. Response oluştur
+        Map<String, Object> result = new HashMap<>();
+        result.put("ogretimElemani", Map.of(
+            "sicilNo", ogretimElemani.getSicilNo(),
+            "adSoyad", ogretimElemani.getAdi() + " " + ogretimElemani.getSoyadi(),
+            "unvan", ogretimElemani.getUnvan() != null ? ogretimElemani.getUnvan() : "",
+            "fakulte", ogretimElemani.getFakAd() != null ? ogretimElemani.getFakAd() : "",
+            "bolum", ogretimElemani.getBolAd() != null ? ogretimElemani.getBolAd() : "",
+            "ePosta", ogretimElemani.getePosta() != null ? ogretimElemani.getePosta() : ""
+        ));
+        
+        result.put("dersler", ogretimElemaniDersleri);
+        result.put("toplamDers", ogretimElemaniDersleri.size());
+        result.put("mesaj", ogretimElemani.getAdi() + " " + ogretimElemani.getSoyadi() + 
+                          " öğretim elemanının " + ogretimElemaniDersleri.size() + " adet dersi bulundu");
+        
+        // İstatistikler
+        result.put("istatistikler", Map.of(
+            "fakulteBazinda", fakulteGrubu,
+            "donemBazinda", donemGrubu
+        ));
+        
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 📚 TC Kimlik No ile öğretim elemanının verdiği derslerin listesini getir
+     */
+    @Operation(
+        summary = "Get Courses Taught by Instructor (by TC ID)",
+        description = "Returns list of courses taught by a specific instructor using TC identification number"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Courses retrieved successfully"),
+        @ApiResponse(responseCode = "202", description = "Cache still loading, try again later"),
+        @ApiResponse(responseCode = "404", description = "Instructor not found")
+    })
+    @GetMapping("/ogretim-elemani/tc/{tcKimlikNo}/dersler")
+    public ResponseEntity<Map<String, Object>> getDerslerByOgretimElemaniTC(
+            @Parameter(description = "TC identification number", required = true, example = "12345678901")
+            @PathVariable String tcKimlikNo) {
+        
+        if (!cacheService.isInitialized()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("status", "CACHE_LOADING");
+            result.put("message", "Cache is still loading, please try again in a few moments");
+            return ResponseEntity.status(202).body(result);
+        }
+        
+        // 1. Öğretim elemanını bul
+        OgretimElemani ogretimElemani = cacheService.getOgretimElemaniByTC(tcKimlikNo);
+        if (ogretimElemani == null) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("error", "Öğretim elemanı bulunamadı");
+            result.put("tcKimlikNo", tcKimlikNo);
+            return ResponseEntity.status(404).body(result);
+        }
+        
+        // 2. Bu öğretim elemanının verdiği dersleri bul
+        List<Ders> tumDersler = cacheService.getAllDersler();
+        List<Ders> ogretimElemaniDersleri = tumDersler.stream()
+            .filter(ders -> ders.getOgretimElemaniTC() != null && 
+                           ders.getOgretimElemaniTC().equals(tcKimlikNo))
+            .collect(Collectors.toList());
+        
+        // 3. İstatistikler hesapla
+        Map<String, Long> fakulteGrubu = ogretimElemaniDersleri.stream()
+            .filter(ders -> ders.getFakAd() != null)
+            .collect(Collectors.groupingBy(Ders::getFakAd, Collectors.counting()));
+            
+        Map<String, Long> donemGrubu = ogretimElemaniDersleri.stream()
+            .filter(ders -> ders.getDonemAd() != null)
+            .collect(Collectors.groupingBy(Ders::getDonemAd, Collectors.counting()));
+        
+        // 4. Response oluştur
+        Map<String, Object> result = new HashMap<>();
+        result.put("ogretimElemani", Map.of(
+            "tcKimlikNo", ogretimElemani.getTcKimlikNo(),
+            "sicilNo", ogretimElemani.getSicilNo() != null ? ogretimElemani.getSicilNo() : "",
+            "adSoyad", ogretimElemani.getAdi() + " " + ogretimElemani.getSoyadi(),
+            "unvan", ogretimElemani.getUnvan() != null ? ogretimElemani.getUnvan() : "",
+            "fakulte", ogretimElemani.getFakAd() != null ? ogretimElemani.getFakAd() : "",
+            "bolum", ogretimElemani.getBolAd() != null ? ogretimElemani.getBolAd() : "",
+            "ePosta", ogretimElemani.getePosta() != null ? ogretimElemani.getePosta() : ""
+        ));
+        
+        result.put("dersler", ogretimElemaniDersleri);
+        result.put("toplamDers", ogretimElemaniDersleri.size());
+        result.put("mesaj", ogretimElemani.getAdi() + " " + ogretimElemani.getSoyadi() + 
+                          " öğretim elemanının " + ogretimElemaniDersleri.size() + " adet dersi bulundu");
+        
+        // İstatistikler
+        result.put("istatistikler", Map.of(
+            "fakulteBazinda", fakulteGrubu,
+            "donemBazinda", donemGrubu
+        ));
+        
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 👨‍🏫 Öğretim elemanının dersine kayıtlı öğrencileri getir (Yetki kontrolü ile)
+     */
+    @Operation(
+        summary = "Get Students by Instructor and Course (with Authorization)",
+        description = "Returns students enrolled in a specific course, verified that the instructor teaches this course"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Students retrieved successfully"),
+        @ApiResponse(responseCode = "202", description = "Cache still loading, try again later"),
+        @ApiResponse(responseCode = "403", description = "Instructor does not teach this course"),
+        @ApiResponse(responseCode = "404", description = "Course or instructor not found")
+    })
+    @GetMapping("/ogretim-elemani/tc/{tcKimlikNo}/ders/{dersHarID}/ogrenciler")
+    public ResponseEntity<Map<String, Object>> getOgrencilerByOgretimElemaniVeDers(
+            @Parameter(description = "Instructor TC identification number", required = true, example = "12345678901")
+            @PathVariable String tcKimlikNo,
+            @Parameter(description = "Course ID", required = true, example = "2838793")
+            @PathVariable String dersHarID) {
+        
+        if (!cacheService.isInitialized()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("status", "CACHE_LOADING");
+            result.put("message", "Cache is still loading, please try again in a few moments");
+            return ResponseEntity.status(202).body(result);
+        }
+        
+        // 1. Öğretim elemanını bul
+        OgretimElemani ogretimElemani = cacheService.getOgretimElemaniByTC(tcKimlikNo);
+        if (ogretimElemani == null) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("error", "Öğretim elemanı bulunamadı");
+            result.put("tcKimlikNo", tcKimlikNo);
+            return ResponseEntity.status(404).body(result);
+        }
+        
+        // 2. Dersi bul
+        Ders ders = cacheService.getDersByHarId(dersHarID);
+        if (ders == null) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("error", "Ders bulunamadı");
+            result.put("dersHarID", dersHarID);
+            return ResponseEntity.status(404).body(result);
+        }
+        
+        // 3. Yetki kontrolü: Bu öğretim elemanı bu dersi veriyor mu?
+        boolean yetkiliMi = false;
+        if (ders.getOgretimElemaniTC() != null && 
+            ders.getOgretimElemaniTC().equals(tcKimlikNo)) {
+            yetkiliMi = true;
+        }
+        
+        if (!yetkiliMi) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("error", "Yetki yok - Bu öğretim elemanı bu dersi vermiyor");
+            result.put("tcKimlikNo", tcKimlikNo);
+            result.put("dersHarID", dersHarID);
+            result.put("ogretimElemani", ogretimElemani.getAdi() + " " + ogretimElemani.getSoyadi());
+            result.put("dersAdi", ders.getDersAdi());
+            return ResponseEntity.status(403).body(result);
+        }
+        
+        // 4. Öğrencileri getir
+        List<Ogrenci> ogrenciler = cacheService.getOgrencilerByDersHarId(dersHarID);
+        
+        // 5. Response oluştur
+        Map<String, Object> result = new HashMap<>();
+        result.put("ogretimElemani", Map.of(
+            "tcKimlikNo", ogretimElemani.getTcKimlikNo(),
+            "sicilNo", ogretimElemani.getSicilNo() != null ? ogretimElemani.getSicilNo() : "",
+            "adSoyad", ogretimElemani.getAdi() + " " + ogretimElemani.getSoyadi(),
+            "unvan", ogretimElemani.getUnvan() != null ? ogretimElemani.getUnvan() : "",
+            "fakulte", ogretimElemani.getFakAd() != null ? ogretimElemani.getFakAd() : "",
+            "bolum", ogretimElemani.getBolAd() != null ? ogretimElemani.getBolAd() : ""
+        ));
+        
+        result.put("ders", Map.of(
+            "dersHarID", ders.getDersHarId(),
+            "dersKodu", ders.getDersKodu(),
+            "dersAdi", ders.getDersAdi(),
+            "kredi", ders.getKredi(),
+            "akts", ders.getAkts(),
+            "donem", ders.getDonemAd()
+        ));
+        
+        result.put("ogrenciler", ogrenciler);
+        result.put("toplamOgrenci", ogrenciler.size());
+        result.put("mesaj", ogretimElemani.getAdi() + " " + ogretimElemani.getSoyadi() + 
+                          " öğretim elemanının " + ders.getDersAdi() + " dersine kayıtlı " + 
+                          ogrenciler.size() + " öğrenci bulundu");
         
         return ResponseEntity.ok(result);
     }

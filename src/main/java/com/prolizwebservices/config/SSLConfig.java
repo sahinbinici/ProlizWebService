@@ -1,17 +1,18 @@
 package com.prolizwebservices.config;
 
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.web.client.RestTemplate;
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.security.cert.X509Certificate;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
-import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.security.cert.X509Certificate;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.RestTemplate;
 
 /**
  * SSL Configuration for secure SOAP client communication
@@ -92,8 +93,8 @@ public class SSLConfig {
             }
         };
         
-        factory.setConnectTimeout(10000); // 10 seconds
-        factory.setReadTimeout(30000);    // 30 seconds
+        factory.setConnectTimeout(30000); // 30 seconds  
+        factory.setReadTimeout(60000);    // 60 seconds
         
         restTemplate.setRequestFactory(factory);
         return restTemplate;
@@ -148,8 +149,8 @@ public class SSLConfig {
             }
         };
         
-        factory.setConnectTimeout(10000);
-        factory.setReadTimeout(30000);
+        factory.setConnectTimeout(30000);
+        factory.setReadTimeout(60000);
         
         restTemplate.setRequestFactory(factory);
         return restTemplate;

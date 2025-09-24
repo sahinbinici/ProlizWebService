@@ -1,16 +1,17 @@
 package com.prolizwebservices.util;
 
-import com.prolizwebservices.model.Ders;
-import com.prolizwebservices.model.OgretimElemani;
-import com.prolizwebservices.model.Ogrenci;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+import com.prolizwebservices.model.Ders;
+import com.prolizwebservices.model.Ogrenci;
+import com.prolizwebservices.model.OgretimElemani;
 
 /**
  * SOAP XML response'larını parse eden utility sınıfı
@@ -29,6 +30,14 @@ public class XmlParser {
         if (xmlResponse == null || xmlResponse.isEmpty()) {
             logger.warn("XML response boş");
             return dersler;
+        }
+        
+        // DEBUG: SOAP response'u görmek için
+        logger.info("🔍 SOAP Response uzunluğu: {} karakter", xmlResponse.length());
+        if (xmlResponse.length() < 1000) {
+            logger.info("🔍 SOAP Response: {}", xmlResponse);
+        } else {
+            logger.info("🔍 SOAP Response preview: {}", xmlResponse.substring(0, 500) + "...");
         }
 
         try {

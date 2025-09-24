@@ -8,13 +8,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -40,6 +43,10 @@ public class DataCacheService {
 
     @Autowired
     private XmlParser xmlParser;
+    
+    @Autowired
+    @Qualifier("soapTaskExecutor")
+    private Executor soapTaskExecutor;
     
     // 🚀 NEW: Progressive Loading Configuration
     @Value("${cache.preload.initial-courses:100}")
@@ -132,11 +139,11 @@ public class DataCacheService {
     }
 
     /**
-     * Öğretim elemanlarını yükler - Derslerden TC'leri toplayıp her birini çağırır
+     * 🚀 PARALEL: Öğretim elemanlarını yükler - TC'leri paralel olarak çağırır
      */
     private void loadOgretimElemanlari() {
         try {
-            logger.info("Öğretim elemanları yükleniyor...");
+            logger.info("🚀 Öğretim elemanları PARALEL yükleniyor...");
             
             // Derslerden öğretim elemanı TC'lerini topla
             Set<String> ogretimElemaniTCSet = allDersler.stream()
@@ -148,31 +155,68 @@ public class DataCacheService {
             
             allOgretimElemanlari.clear();
             
-            // Her TC için öğretim elemanı bilgilerini al
-            int loadedCount = 0;
-            for (String tc : ogretimElemaniTCSet) {
-                try {
-                    String xmlResponse = webServiceClient.getOgretimElemaniByFilters(tc, null, null);
-                    List<OgretimElemani> elemanlar = xmlParser.parseOgretimElemanlari(xmlResponse);
-                    
-                    allOgretimElemanlari.addAll(elemanlar);
-                    loadedCount += elemanlar.size();
-                    
-                    // Rate limiting - çok hızlı istek göndermeyelim
+            // TC'leri paralel olarak işle (10'lu batch'ler halinde)
+            List<String> tcList = new ArrayList<>(ogretimElemaniTCSet);
+            int batchSize = 10; // 10 paralel SOAP çağrısı
+            int totalBatches = (int) Math.ceil((double) tcList.size() / batchSize);
+            int totalLoaded = 0;
+            
+            for (int batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+                int startIndex = batchIndex * batchSize;
+                int endIndex = Math.min(startIndex + batchSize, tcList.size());
+                List<String> batchTCs = tcList.subList(startIndex, endIndex);
+                
+                logger.info("🔄 Batch {}/{}: {} TC paralel işleniyor...", 
+                    batchIndex + 1, totalBatches, batchTCs.size());
+                
+                // Batch'i paralel işle
+                List<CompletableFuture<List<OgretimElemani>>> futures = batchTCs.stream()
+                    .map(tc -> CompletableFuture.supplyAsync(() -> {
+                        try {
+                            String xmlResponse = webServiceClient.getOgretimElemaniByFilters(tc, null, null);
+                            List<OgretimElemani> elemanlar = xmlParser.parseOgretimElemanlari(xmlResponse);
+                            
+                            if (!elemanlar.isEmpty()) {
+                                logger.debug("✅ TC {}: {} eleman yüklendi", tc, elemanlar.size());
+                            }
+                            
+                            return elemanlar;
+                        } catch (Exception e) {
+                            logger.debug("❌ TC {} için hata: {}", tc, e.getMessage());
+                            return new ArrayList<OgretimElemani>();
+                        }
+                    }, soapTaskExecutor))
+                    .collect(Collectors.toList());
+                
+                // Batch sonuçlarını topla
+                int batchLoaded = 0;
+                for (CompletableFuture<List<OgretimElemani>> future : futures) {
                     try {
-                        TimeUnit.MILLISECONDS.sleep(50);
+                        List<OgretimElemani> elemanlar = future.get(30, TimeUnit.SECONDS); // 30s timeout
+                        allOgretimElemanlari.addAll(elemanlar);
+                        batchLoaded += elemanlar.size();
+                    } catch (Exception e) {
+                        logger.warn("Future completion hatası: {}", e.getMessage());
+                    }
+                }
+                
+                totalLoaded += batchLoaded;
+                logger.info("✅ Batch {}/{} tamamlandı: +{} eleman (Toplam: {})", 
+                    batchIndex + 1, totalBatches, batchLoaded, totalLoaded);
+                
+                // Batch'ler arası rate limiting (SOAP servisini yormamak için)
+                if (batchIndex < totalBatches - 1) {
+                    try {
+                        TimeUnit.MILLISECONDS.sleep(200); // 200ms bekle
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
-                        logger.warn("Öğretim elemanı yükleme işlemi kesildi");
+                        logger.warn("Batch loading kesildi");
                         break;
                     }
-                    
-                } catch (Exception e) {
-                    logger.debug("TC {} için öğretim elemanı yükleme hatası: {}", tc, e.getMessage());
                 }
             }
             
-            logger.info("{} öğretim elemanı başarıyla yüklendi", loadedCount);
+            logger.info("🎉 PARALEL yükleme tamamlandı: {} öğretim elemanı yüklendi", totalLoaded);
             
         } catch (Exception e) {
             logger.error("Öğretim elemanı yükleme hatası: {}", e.getMessage(), e);
@@ -195,49 +239,95 @@ public class DataCacheService {
             logger.info("Startup loading: {} ders yüklenecek (rate-limit: {}ms)", 
                 initialDersler.size(), rateLimitMs);
             
-            int loadedCount = 0;
-            int errorCount = 0;
+            // 🚀 INITIAL LOADING: Küçük batch'ler halinde paralel yükle (startup için konservatif)
+            int initialBatchSize = 5; // Startup için küçük batch (aggressive değil)
+            int totalBatches = (int) Math.ceil((double) initialDersler.size() / initialBatchSize);
+            int totalLoaded = 0;
+            int totalErrors = 0;
             
-            for (Ders ders : initialDersler) {
-                try {
-                    String xmlResponse = webServiceClient.getUzaktanEgitimDersiAlanOgrencileri(ders.getDersHarId());
-                    List<Ogrenci> ogrenciler = xmlParser.parseOgrenciler(xmlResponse, ders.getDersHarId());
-                    
-                    if (!ogrenciler.isEmpty()) {
-                        dersOgrencileriMap.put(ders.getDersHarId(), ogrenciler);
-                        loadedCount++;
-                    }
-                    
-                    // Progress log (her 25 derste - az ders olduğu için)
-                    if (loadedCount % 25 == 0 && loadedCount > 0) {
-                        logger.info("🔄 Initial Progress: {}/{} ders yüklendi, {} hata", 
-                            loadedCount, initialDersler.size(), errorCount);
-                    }
-                    
-                    // Hızlı rate limiting (startup için)
+            for (int batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+                int startIndex = batchIndex * initialBatchSize;
+                int endIndex = Math.min(startIndex + initialBatchSize, initialDersler.size());
+                List<Ders> batchDersler = initialDersler.subList(startIndex, endIndex);
+                
+                logger.info("🔄 Initial Batch {}/{}: {} ders paralel yükleniyor...", 
+                    batchIndex + 1, totalBatches, batchDersler.size());
+                
+                // Batch'i paralel işle
+                List<CompletableFuture<Map<String, Object>>> futures = batchDersler.stream()
+                    .map(ders -> CompletableFuture.supplyAsync(() -> {
+                        Map<String, Object> result = new HashMap<>();
+                        result.put("dersHarId", ders.getDersHarId());
+                        result.put("success", false);
+                        
+                        try {
+                            String xmlResponse = webServiceClient.getUzaktanEgitimDersiAlanOgrencileri(ders.getDersHarId());
+                            List<Ogrenci> ogrenciler = xmlParser.parseOgrenciler(xmlResponse, ders.getDersHarId());
+                            
+                            result.put("success", true);
+                            result.put("ogrenciler", ogrenciler);
+                            result.put("ders", ders);
+                            
+                            return result;
+                        } catch (Exception e) {
+                            result.put("error", e.getMessage());
+                            logger.debug("Initial loading hatası ({}): {}", ders.getDersHarId(), e.getMessage());
+                            return result;
+                        }
+                    }, soapTaskExecutor))
+                    .collect(Collectors.toList());
+                
+                // Batch sonuçlarını topla
+                int batchLoaded = 0;
+                int batchErrors = 0;
+                for (CompletableFuture<Map<String, Object>> future : futures) {
                     try {
-                        TimeUnit.MILLISECONDS.sleep(rateLimitMs);
+                        Map<String, Object> result = future.get(30, TimeUnit.SECONDS);
+                        
+                        if ((Boolean) result.get("success")) {
+                            @SuppressWarnings("unchecked")
+                            List<Ogrenci> ogrenciler = (List<Ogrenci>) result.get("ogrenciler");
+                            Ders ders = (Ders) result.get("ders");
+                            
+                            if (!ogrenciler.isEmpty()) {
+                                dersOgrencileriMap.put(ders.getDersHarId(), ogrenciler);
+                                batchLoaded++;
+                            }
+                        } else {
+                            batchErrors++;
+                        }
+                    } catch (Exception e) {
+                        batchErrors++;
+                        logger.warn("Initial future hatası: {}", e.getMessage());
+                    }
+                }
+                
+                totalLoaded += batchLoaded;
+                totalErrors += batchErrors;
+                
+                logger.info("✅ Initial Batch {}/{}: +{} ders, {} hata (Toplam: {}/{})", 
+                    batchIndex + 1, totalBatches, batchLoaded, batchErrors, totalLoaded, initialDersler.size());
+                
+                // Startup için konservatif rate limiting (batch'ler arası)
+                if (batchIndex < totalBatches - 1) {
+                    try {
+                        TimeUnit.MILLISECONDS.sleep(rateLimitMs * 5); // 5x daha konservatif
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
-                        logger.warn("Initial loading kesildi: {} ders yüklendi", loadedCount);
-                        break;
-                    }
-                    
-                } catch (Exception e) {
-                    errorCount++;
-                    if (errorCount <= 5) { // İlk 5 hatayı detaylı logla
-                        logger.warn("Initial loading hatası ({}): {}", ders.getDersHarId(), e.getMessage());
-                    } else {
-                        logger.debug("Ders {} initial loading hatası: {}", ders.getDersHarId(), e.getMessage());
-                    }
-                    
-                    // Startup'ta daha toleranslı olalım
-                    if (errorCount > maxErrorsPerBatch * 2) {
-                        logger.error("Initial loading'de çok fazla hata ({}), durduruluyor!", errorCount);
+                        logger.warn("Initial loading kesildi: {} ders yüklendi", totalLoaded);
                         break;
                     }
                 }
+                
+                // Çok fazla hata kontrolü
+                if (totalErrors > maxErrorsPerBatch * 2) {
+                    logger.error("Initial loading'de çok fazla hata ({}), durduruluyor!", totalErrors);
+                    break;
+                }
             }
+            
+            int loadedCount = totalLoaded;
+            int errorCount = totalErrors;
             
             // Progress tracking güncelle
             totalCoursesProcessed = loadedCount;
@@ -541,51 +631,84 @@ public class DataCacheService {
             .limit(batchSize)
             .collect(Collectors.toList());
         
+        // 🚀 PARALEL Progressive Loading: Batch'i paralel işle
+        List<Ders> toProcess = batchDersler.stream()
+            .filter(ders -> !dersOgrencileriMap.containsKey(ders.getDersHarId())) // Cache'te olmayan
+            .collect(Collectors.toList());
+            
+        logger.info("🚀 Progressive PARALEL: {} ders işlenecek", toProcess.size());
+        
+        // Paralel SOAP çağrıları
+        List<CompletableFuture<Map<String, Object>>> futures = toProcess.stream()
+            .map(ders -> CompletableFuture.supplyAsync(() -> {
+                Map<String, Object> result = new HashMap<>();
+                result.put("dersHarId", ders.getDersHarId());
+                result.put("success", false);
+                result.put("ogrenciler", new ArrayList<Ogrenci>());
+                
+                try {
+                    String xmlResponse = webServiceClient.getUzaktanEgitimDersiAlanOgrencileri(ders.getDersHarId());
+                    List<Ogrenci> ogrenciler = xmlParser.parseOgrenciler(xmlResponse, ders.getDersHarId());
+                    
+                    result.put("success", true);
+                    result.put("ogrenciler", ogrenciler);
+                    result.put("ders", ders);
+                    
+                    return result;
+                } catch (Exception e) {
+                    result.put("error", e.getMessage());
+                    logger.debug("Progressive hatası ({}): {}", ders.getDersHarId(), e.getMessage());
+                    return result;
+                }
+            }, soapTaskExecutor))
+            .collect(Collectors.toList());
+        
+        // Sonuçları topla ve cache'e ekle
         int batchLoadedCount = 0;
         int batchErrorCount = 0;
         
-        for (Ders ders : batchDersler) {
-            // Zaten cache'te var mı kontrol et
-            if (dersOgrencileriMap.containsKey(ders.getDersHarId())) {
-                continue; // Skip - zaten var
-            }
-            
+        for (CompletableFuture<Map<String, Object>> future : futures) {
             try {
-                String xmlResponse = webServiceClient.getUzaktanEgitimDersiAlanOgrencileri(ders.getDersHarId());
-                List<Ogrenci> ogrenciler = xmlParser.parseOgrenciler(xmlResponse, ders.getDersHarId());
+                Map<String, Object> result = future.get(45, TimeUnit.SECONDS); // 45s timeout
                 
-                if (!ogrenciler.isEmpty()) {
-                    dersOgrencileriMap.put(ders.getDersHarId(), ogrenciler);
+                if ((Boolean) result.get("success")) {
+                    @SuppressWarnings("unchecked")
+                    List<Ogrenci> ogrenciler = (List<Ogrenci>) result.get("ogrenciler");
+                    Ders ders = (Ders) result.get("ders");
+                    String dersHarId = (String) result.get("dersHarId");
                     
-                    // Öğrenci-ders index'ini güncelle
-                    for (Ogrenci ogrenci : ogrenciler) {
-                        if (ogrenci.getOgrNo() != null) {
-                            ogrenciDerslerIndex.computeIfAbsent(ogrenci.getOgrNo(), k -> new ArrayList<>()).add(ders);
+                    if (!ogrenciler.isEmpty()) {
+                        // Thread-safe cache update
+                        dersOgrencileriMap.put(dersHarId, ogrenciler);
+                        
+                        // Öğrenci-ders index'ini güncelle (thread-safe)
+                        synchronized (ogrenciDerslerIndex) {
+                            for (Ogrenci ogrenci : ogrenciler) {
+                                if (ogrenci.getOgrNo() != null) {
+                                    ogrenciDerslerIndex.computeIfAbsent(ogrenci.getOgrNo(), k -> new ArrayList<>()).add(ders);
+                                }
+                            }
                         }
+                        
+                        batchLoadedCount++;
+                        totalCoursesProcessed++;
                     }
-                    
-                    batchLoadedCount++;
-                    totalCoursesProcessed++;
-                }
-                
-                // Progressive rate limiting
-                try {
-                    TimeUnit.MILLISECONDS.sleep(rateLimitMs);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    logger.warn("Progressive loading kesildi");
-                    break;
+                } else {
+                    batchErrorCount++;
                 }
                 
             } catch (Exception e) {
                 batchErrorCount++;
-                logger.debug("Progressive loading hatası ({}): {}", ders.getDersHarId(), e.getMessage());
-                
-                if (batchErrorCount > maxErrorsPerBatch) {
-                    logger.warn("Batch'te çok fazla hata ({}), batch atlanıyor", batchErrorCount);
-                    break;
-                }
+                logger.warn("Progressive future hatası: {}", e.getMessage());
             }
+        }
+        
+        // Progressive loading'e özel rate limiting (global seviyede)
+        try {
+            TimeUnit.MILLISECONDS.sleep(rateLimitMs * 2); // Biraz daha konservatif
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Progressive loading kesildi");
         }
         
         // Progress güncelle
