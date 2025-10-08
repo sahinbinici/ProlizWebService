@@ -51,7 +51,7 @@ public class ProlizWebServiceController {
     // 1. Academic Staff Authentication
     @Operation(
         summary = "Academic Staff Password Verification",
-        description = "Authenticates academic staff members using their username and password credentials."
+        description = "Authenticates academic staff members using their username and password credentials. Password is automatically hashed with MD5."
     )
     @ApiResponses(value = {
         @ApiResponse(responseCode = "200", description = "Authentication request processed successfully"),
@@ -60,9 +60,9 @@ public class ProlizWebServiceController {
     })
     @PostMapping("/akademik-personel/sifre-kontrol")
     public ResponseEntity<String> akademikPersonelSifreKontrol(
-            @Parameter(description = "Academic staff username", required = true, example = "john.doe")
+            @Parameter(description = "Academic staff username (Sicil No)", required = true, example = "78555023")
             @RequestParam String kullaniciAdi,
-            @Parameter(description = "Academic staff password", required = true, example = "password123")
+            @Parameter(description = "Academic staff password (will be MD5 hashed)", required = true, example = "password123")
             @RequestParam String sifre) {
         
         validateNotEmpty(kullaniciAdi, "kullaniciAdi");

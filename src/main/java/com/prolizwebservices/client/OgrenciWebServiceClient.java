@@ -1,6 +1,7 @@
 package com.prolizwebservices.client;
 
 import com.prolizwebservices.exception.SoapServiceException;
+import com.prolizwebservices.service.HybridCacheService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +26,9 @@ public class OgrenciWebServiceClient {
     private static final String SOAP_URL = "https://obs.gantep.edu.tr/proliz_obs_lms_miner/proliz_obs_lms_miner.asmx";
 
     private final RestTemplate restTemplate;
+    
+    @Autowired(required = false)
+    private HybridCacheService cacheService;
 
     @Value("${soap.service.username:ProLmsGan}")
     private String serviceUsername;
@@ -52,21 +56,26 @@ public class OgrenciWebServiceClient {
     }
 
     /**
-     * Akademik personel şifre kontrolü yapar
-     * @param kullaniciAdi Kullanıcı adı
-     * @param sifre Şifre
+     * Akademik personel şifre kontrolü yapar (MD5 hash ile)
+     * @param sicilNo Sicil numarası
+     * @param sifre Şifre (MD5 hash'lenecek)
      * @return SOAP yanıtı
      * @throws SoapServiceException SOAP hatası durumunda fırlatılır
      */
-    public String akademikPersonelSifreKontrol(String kullaniciAdi, String sifre) throws SoapServiceException {
+    public String akademikPersonelSifreKontrol(String sicilNo, String sifre) throws SoapServiceException {
         final String methodName = "AkademikPersonelSifreKontrol";
-        logger.info("{} başlatıldı - Kullanıcı: {}", methodName, kullaniciAdi);
+        logger.info("{} başlatıldı - Sicil No: {}", methodName, sicilNo);
+        
+        // Şifreyi MD5 hash'e çevir ve büyük harflerle kullan
+        String hashedPassword = hashPasswordMD5(sifre);
+        logger.debug("Şifre MD5 hash'lendi: {} -> {}", sifre, hashedPassword);
         
         // SOAP istek gövdesini oluştur (authentication bilgileri ile birlikte)
         String requestBody = "<userName>" + escapeXml(serviceUsername) + "</userName>" +
                             "<password>" + escapeXml(servicePassword) + "</password>" +
-                            "<kullaniciAdi>" + escapeXml(kullaniciAdi) + "</kullaniciAdi>" +
-                            "<sifre>" + escapeXml(sifre) + "</sifre>";
+                            "<sicilNo>" + escapeXml(sicilNo) + "</sicilNo>" +
+                            "<sifre>" + escapeXml(hashedPassword) + "</sifre>" +
+                            "<ipAddress></ipAddress>";
 
         // SOAP envelope oluştur
         String soapBody = createSoapRequest(methodName, requestBody);
@@ -108,13 +117,27 @@ public class OgrenciWebServiceClient {
     }
 
     /**
-     * Uzaktan eğitim derslerini getirir
+     * Uzaktan eğitim derslerini getirir (CACHE DESTEKLİ)
      * @return SOAP yanıtı
      * @throws SoapServiceException SOAP hatası durumunda fırlatılır
      */
     public String getUzaktanEgitimDersleri() throws SoapServiceException {
         final String methodName = "UzaktanEgitimDersleri";
-        logger.info("{} başlatıldı", methodName);
+        final String cacheKey = "soap:" + methodName;
+        
+        // Cache varsa kullan
+        if (cacheService != null) {
+            return cacheService.getOrFetch(cacheKey, methodName, () -> {
+                return fetchUzaktanEgitimDersleriFromSoap(methodName);
+            });
+        }
+        
+        // Cache yoksa direkt SOAP çağrısı
+        return fetchUzaktanEgitimDersleriFromSoap(methodName);
+    }
+    
+    private String fetchUzaktanEgitimDersleriFromSoap(String methodName) {
+        logger.info("{} başlatıldı (SOAP)", methodName);
 
         // SOAP istek gövdesini oluştur (authentication bilgileri ile birlikte)
         String requestBody = "<userName>" + escapeXml(serviceUsername) + "</userName>" +
@@ -125,19 +148,33 @@ public class OgrenciWebServiceClient {
         
         // SOAP isteğini gönder
         String result = sendSoapRequestMain(soapBody, "http://tempuri.org/" + methodName);
-        logger.info("{} tamamlandı", methodName);
+        logger.info("{} tamamlandı (SOAP)", methodName);
         return result;
     }
 
     /**
-     * Uzaktan eğitim dersi alan öğrencileri getirir
+     * Uzaktan eğitim dersi alan öğrencileri getirir (CACHE DESTEKLİ)
      * @param dersKodu Ders kodu
      * @return SOAP yanıtı
      * @throws SoapServiceException SOAP hatası durumunda fırlatılır
      */
     public String getUzaktanEgitimDersiAlanOgrencileri(String dersKodu) throws SoapServiceException {
         final String methodName = "UzaktanEgitimDersiAlanOgrencileri";
-        logger.info("{} başlatıldı - Ders Har ID: {}", methodName, dersKodu);
+        final String cacheKey = "soap:" + methodName + ":" + dersKodu;
+        
+        // Cache varsa kullan
+        if (cacheService != null) {
+            return cacheService.getOrFetch(cacheKey, methodName, () -> {
+                return fetchUzaktanEgitimDersiAlanOgrencileriFromSoap(methodName, dersKodu);
+            });
+        }
+        
+        // Cache yoksa direkt SOAP çağrısı
+        return fetchUzaktanEgitimDersiAlanOgrencileriFromSoap(methodName, dersKodu);
+    }
+    
+    private String fetchUzaktanEgitimDersiAlanOgrencileriFromSoap(String methodName, String dersKodu) {
+        logger.info("{} başlatıldı (SOAP) - Ders Har ID: {}", methodName, dersKodu);
 
         // SOAP istek gövdesini oluştur (authentication bilgileri ile birlikte) 
         // dersKodu parametresi aslında dersHarID değeri içeriyor
@@ -150,12 +187,12 @@ public class OgrenciWebServiceClient {
         
         // SOAP isteğini gönder
         String result = sendSoapRequestMain(soapBody, "http://tempuri.org/" + methodName);
-        logger.info("{} tamamlandı", methodName);
+        logger.info("{} tamamlandı (SOAP)", methodName);
         return result;
     }
 
     /**
-     * Öğretim elemanı bilgilerini getirir (TC kimlik, sicil no veya eposta ile)
+     * Öğretim elemanı bilgilerini getirir (TC kimlik, sicil no veya eposta ile) (CACHE DESTEKLİ)
      * @param tcKimlikNo TC kimlik numarası (opsiyonel)
      * @param sicilNo Sicil numarası (opsiyonel) 
      * @param eposta E-posta adresi (opsiyonel)
@@ -164,7 +201,24 @@ public class OgrenciWebServiceClient {
      */
     public String getOgretimElemaniByFilters(String tcKimlikNo, String sicilNo, String eposta) throws SoapServiceException {
         final String methodName = "DersiVerenOgretimElamaniGetir";
-        logger.info("{} başlatıldı - TC: {}, Sicil: {}, Eposta: {}", methodName, tcKimlikNo, sicilNo, eposta);
+        final String cacheKey = "soap:" + methodName + ":" + 
+            (tcKimlikNo != null ? tcKimlikNo : "") + ":" + 
+            (sicilNo != null ? sicilNo : "") + ":" + 
+            (eposta != null ? eposta : "");
+        
+        // Cache varsa kullan
+        if (cacheService != null) {
+            return cacheService.getOrFetch(cacheKey, methodName, () -> {
+                return fetchOgretimElemaniByFiltersFromSoap(methodName, tcKimlikNo, sicilNo, eposta);
+            });
+        }
+        
+        // Cache yoksa direkt SOAP çağrısı
+        return fetchOgretimElemaniByFiltersFromSoap(methodName, tcKimlikNo, sicilNo, eposta);
+    }
+    
+    private String fetchOgretimElemaniByFiltersFromSoap(String methodName, String tcKimlikNo, String sicilNo, String eposta) {
+        logger.info("{} başlatıldı (SOAP) - TC: {}, Sicil: {}, Eposta: {}", methodName, tcKimlikNo, sicilNo, eposta);
 
         // SOAP istek gövdesini oluştur (authentication bilgileri ile birlikte)
         String requestBody = "<userName>" + escapeXml(serviceUsername) + "</userName>" +
@@ -178,7 +232,7 @@ public class OgrenciWebServiceClient {
         
         // SOAP isteğini gönder
         String result = sendSoapRequestMain(soapBody, "http://tempuri.org/" + methodName);
-        logger.info("{} tamamlandı", methodName);
+        logger.info("{} tamamlandı (SOAP)", methodName);
         return result;
     }
 

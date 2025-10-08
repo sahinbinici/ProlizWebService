@@ -48,6 +48,9 @@ public class DataCacheService {
     @Qualifier("soapTaskExecutor")
     private Executor soapTaskExecutor;
     
+    @Autowired(required = false)
+    private ParallelDataLoader parallelDataLoader;
+    
     // 🚀 NEW: Progressive Loading Configuration
     @Value("${cache.preload.initial-courses:100}")
     private int initialCoursesToLoad;
@@ -90,32 +93,68 @@ public class DataCacheService {
 
     /**
      * Uygulama başlarken cache'i initialize et
+     * 
+     * DOĞRU SIRALAMA (Bağımlılık Zinciri):
+     * 1. UzaktanEgitimDersleri (DERS_HAR_ID üretir)
+     * 2. DersiVerenOgretimElamaniGetir (OGRETIM_ELEMANI_TC kullanır)
+     * 3. UzaktanEgitimDersiAlanOgrencileri (DERS_HAR_ID kullanır)
      */
     @PostConstruct
     public void initializeCache() {
-        logger.info("DataCache initialize ediliyor...");
+        logger.info("🚀 DataCache initialize ediliyor (Bağımlılık Zinciri Sırasıyla)...");
         
         try {
-            // 1. Dersleri yükle
+            // ============================================
+            // STEP 1: UzaktanEgitimDersleri
+            // ============================================
+            logger.info("📋 STEP 1/4: Dersler yükleniyor (UzaktanEgitimDersleri)...");
             loadDersler();
+            logger.info("✅ STEP 1/4: {} ders yüklendi", allDersler.size());
             
-            // 2. Öğretim elemanlarını yükle (tüm fakülteler için)
+            // ============================================
+            // STEP 2: DersiVerenOgretimElamaniGetir
+            // ============================================
+            logger.info("👨‍🏫 STEP 2/4: Öğretim elemanları yükleniyor (DersiVerenOgretimElamaniGetir)...");
+            logger.info("   → Derslerden {} benzersiz TC kimlik numarası çıkarılacak", 
+                allDersler.stream()
+                    .map(Ders::getOgretimElemaniTC)
+                    .filter(tc -> tc != null && !tc.trim().isEmpty())
+                    .distinct()
+                    .count());
             loadOgretimElemanlari();
+            logger.info("✅ STEP 2/4: {} öğretim elemanı yüklendi", allOgretimElemanlari.size());
             
-            // 3. Index'leri oluştur
+            // ============================================
+            // STEP 3: Index'leri Oluştur
+            // ============================================
+            logger.info("🔍 STEP 3/4: Index'ler oluşturuluyor...");
             buildIndexes();
+            logger.info("✅ STEP 3/4: Index'ler oluşturuldu");
             
-            // 4. Ders öğrencilerini yükle (seçili dersler için)
+            // ============================================
+            // STEP 4: UzaktanEgitimDersiAlanOgrencileri
+            // ============================================
+            logger.info("👥 STEP 4/4: Ders öğrencileri yükleniyor (UzaktanEgitimDersiAlanOgrencileri)...");
+            logger.info("   → İlk {} ders için öğrenciler yüklenecek (DERS_HAR_ID kullanılarak)", initialCoursesToLoad);
             loadSelectedDersOgrencileri();
+            logger.info("✅ STEP 4/4: {} ders için öğrenciler yüklendi", dersOgrencileriMap.size());
             
+            // ============================================
+            // Tamamlandı
+            // ============================================
             lastUpdateTime = LocalDateTime.now();
             isInitialized = true;
             
-            logger.info("DataCache initialize tamamlandı - Dersler: {}, Öğretim Elemanları: {}, Ders-Öğrenci: {}", 
-                allDersler.size(), allOgretimElemanlari.size(), dersOgrencileriMap.size());
+            logger.info("🎉 DataCache initialize tamamlandı!");
+            logger.info("   📊 Özet:");
+            logger.info("      - Dersler: {}", allDersler.size());
+            logger.info("      - Öğretim Elemanları: {}", allOgretimElemanlari.size());
+            logger.info("      - Ders-Öğrenci İlişkileri: {}", dersOgrencileriMap.size());
+            logger.info("      - Toplam Öğrenci: {}", 
+                dersOgrencileriMap.values().stream().mapToInt(List::size).sum());
                 
         } catch (Exception e) {
-            logger.error("DataCache initialize hatası: {}", e.getMessage(), e);
+            logger.error("❌ DataCache initialize hatası: {}", e.getMessage(), e);
         }
     }
 
@@ -139,11 +178,11 @@ public class DataCacheService {
     }
 
     /**
-     * 🚀 PARALEL: Öğretim elemanlarını yükler - TC'leri paralel olarak çağırır
+     * 🚀 ULTRA-FAST PARALEL: Öğretim elemanlarını yükler - ParallelDataLoader kullanır
      */
     private void loadOgretimElemanlari() {
         try {
-            logger.info("🚀 Öğretim elemanları PARALEL yükleniyor...");
+            logger.info("🚀 Öğretim elemanları ULTRA-FAST PARALEL yükleniyor...");
             
             // Derslerden öğretim elemanı TC'lerini topla
             Set<String> ogretimElemaniTCSet = allDersler.stream()
@@ -153,6 +192,20 @@ public class DataCacheService {
             
             logger.info("Toplam {} benzersiz öğretim elemanı TC'si bulundu", ogretimElemaniTCSet.size());
             
+            allOgretimElemanlari.clear();
+            
+            // ParallelDataLoader varsa kullan (çok daha hızlı!)
+            if (parallelDataLoader != null) {
+                List<OgretimElemani> loaded = parallelDataLoader.loadOgretimElemanlariParallel(
+                    new ArrayList<>(ogretimElemaniTCSet)
+                );
+                allOgretimElemanlari.addAll(loaded);
+                logger.info("🎉 ULTRA-FAST yükleme tamamlandı: {} öğretim elemanı", loaded.size());
+                return;
+            }
+            
+            // Fallback: Eski yöntem
+            logger.info("⚠️ ParallelDataLoader bulunamadı, standart yöntem kullanılıyor");
             allOgretimElemanlari.clear();
             
             // TC'leri paralel olarak işle (10'lu batch'ler halinde)

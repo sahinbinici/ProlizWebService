@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.prolizwebservices.client.OgrenciWebServiceClient;
 import com.prolizwebservices.model.Ders;
 import com.prolizwebservices.model.Ogrenci;
 import com.prolizwebservices.model.OgretimElemani;
@@ -47,6 +48,9 @@ public class DataController {
 
     @Autowired
     private DataCacheService cacheService;
+    
+    @Autowired
+    private OgrenciWebServiceClient webServiceClient;
 
     /**
      * 🚀 Cache durumunu kontrol et (Progressive Loading ile)
@@ -55,7 +59,7 @@ public class DataController {
         summary = "Get Cache Status with Progressive Loading Info",
         description = "Returns cache status including progressive background loading progress"
     )
-    @GetMapping("/cache/status")
+    @GetMapping(value = "/cache/status", produces = "application/json")
     public ResponseEntity<Map<String, Object>> getCacheStatus() {
         Map<String, Object> status = new HashMap<>();
         
@@ -86,7 +90,7 @@ public class DataController {
         summary = "Get All Courses with Pagination",
         description = "Returns paginated list of all courses for better performance"
     )
-    @GetMapping("/dersler")
+    @GetMapping(value = "/dersler", produces = "application/json")
     public ResponseEntity<Map<String, Object>> getAllDersler(
             @Parameter(description = "Page number (0-based)", example = "0")
             @RequestParam(defaultValue = "0") int page,
@@ -129,7 +133,7 @@ public class DataController {
         summary = "Get All Faculties",
         description = "Returns list of all faculties"
     )
-    @GetMapping("/fakulteler")
+    @GetMapping(value = "/fakulteler", produces = "application/json")
     public ResponseEntity<Set<String>> getAllFakulteler() {
         if (!cacheService.isInitialized()) {
             return ResponseEntity.accepted().build(); // 202 - Cache henüz hazır değil
@@ -151,7 +155,7 @@ public class DataController {
         @ApiResponse(responseCode = "202", description = "Cache not ready yet"),
         @ApiResponse(responseCode = "404", description = "Faculty not found")
     })
-    @GetMapping("/fakulte/{fakulteAdi}/dersler")
+    @GetMapping(value = "/fakulte/{fakulteAdi}/dersler", produces = "application/json")
     public ResponseEntity<List<Ders>> getDerslerByFakulte(
             @Parameter(description = "Faculty name", required = true, example = "MÜHENDİSLİK FAKÜLTESİ")
             @PathVariable String fakulteAdi) {
@@ -176,7 +180,7 @@ public class DataController {
         summary = "Get Faculty Member by TC ID",
         description = "Returns faculty member information by TC identification number"
     )
-    @GetMapping("/ogretim-elemani/tc/{tcKimlikNo}")
+    @GetMapping(value = "/ogretim-elemani/tc/{tcKimlikNo}", produces = "application/json")
     public ResponseEntity<OgretimElemani> getOgretimElemaniByTC(
             @Parameter(description = "TC identification number", required = true, example = "12345678901")
             @PathVariable String tcKimlikNo) {
@@ -201,7 +205,7 @@ public class DataController {
         summary = "Get Faculty Member by Registry Number",
         description = "Returns faculty member information by registry number"
     )
-    @GetMapping("/ogretim-elemani/sicil/{sicilNo}")
+    @GetMapping(value = "/ogretim-elemani/sicil/{sicilNo}", produces = "application/json")
     public ResponseEntity<OgretimElemani> getOgretimElemaniBySicil(
             @Parameter(description = "Registry number", required = true, example = "12345")
             @PathVariable String sicilNo) {
@@ -226,7 +230,7 @@ public class DataController {
         summary = "Get Course Details",
         description = "Returns complete course information including instructor and enrolled students"
     )
-    @GetMapping("/ders-detay/{dersHarID}")
+    @GetMapping(value = "/ders-detay/{dersHarID}", produces = "application/json")
     public ResponseEntity<Map<String, Object>> getDersDetay(
             @Parameter(description = "Course ID", required = true, example = "2838793")
             @PathVariable String dersHarID) {
@@ -264,7 +268,7 @@ public class DataController {
         summary = "Get Course Instructor (FAST - from cache)",
         description = "Returns course instructor from cache - much faster than SOAP call"
     )
-    @GetMapping("/ders/{dersHarID}/ogretim-elemani-fast")
+    @GetMapping(value = "/ders/{dersHarID}/ogretim-elemani-fast", produces = "application/json")
     public ResponseEntity<OgretimElemani> getOgretimElemaniByDersFast(
             @Parameter(description = "Course ID", required = true, example = "2838793")
             @PathVariable String dersHarID) {
@@ -294,7 +298,7 @@ public class DataController {
         @ApiResponse(responseCode = "202", description = "Cache still loading, try again later"), 
         @ApiResponse(responseCode = "404", description = "Student not found in any course")
     })
-    @GetMapping("/ogrenci/{ogrenciNo}/dersler")
+    @GetMapping(value = "/ogrenci/{ogrenciNo}/dersler", produces = "application/json")
     public ResponseEntity<?> getOgrenciDersleri(
             @Parameter(description = "Student Number", required = true, example = "20180001234")
             @PathVariable String ogrenciNo) {
@@ -350,7 +354,7 @@ public class DataController {
         @ApiResponse(responseCode = "202", description = "Cache still loading, try again later"),
         @ApiResponse(responseCode = "404", description = "Instructor not found")
     })
-    @GetMapping("/ogretim-elemani/{sicilNo}/dersler")
+    @GetMapping(value = "/ogretim-elemani/{sicilNo}/dersler", produces = "application/json")
     public ResponseEntity<Map<String, Object>> getDerslerByOgretimElemani(
             @Parameter(description = "Instructor registry number", required = true, example = "12345")
             @PathVariable String sicilNo) {
@@ -424,7 +428,7 @@ public class DataController {
         @ApiResponse(responseCode = "202", description = "Cache still loading, try again later"),
         @ApiResponse(responseCode = "404", description = "Instructor not found")
     })
-    @GetMapping("/ogretim-elemani/tc/{tcKimlikNo}/dersler")
+    @GetMapping(value = "/ogretim-elemani/tc/{tcKimlikNo}/dersler", produces = "application/json")
     public ResponseEntity<Map<String, Object>> getDerslerByOgretimElemaniTC(
             @Parameter(description = "TC identification number", required = true, example = "12345678901")
             @PathVariable String tcKimlikNo) {
@@ -500,7 +504,7 @@ public class DataController {
         @ApiResponse(responseCode = "403", description = "Instructor does not teach this course"),
         @ApiResponse(responseCode = "404", description = "Course or instructor not found")
     })
-    @GetMapping("/ogretim-elemani/tc/{tcKimlikNo}/ders/{dersHarID}/ogrenciler")
+    @GetMapping(value = "/ogretim-elemani/tc/{tcKimlikNo}/ders/{dersHarID}/ogrenciler", produces = "application/json")
     public ResponseEntity<Map<String, Object>> getOgrencilerByOgretimElemaniVeDers(
             @Parameter(description = "Instructor TC identification number", required = true, example = "12345678901")
             @PathVariable String tcKimlikNo,
@@ -588,7 +592,7 @@ public class DataController {
         summary = "Get Student Details with Course Info",
         description = "Returns detailed student information including courses and academic statistics"
     )
-    @GetMapping("/ogrenci/{ogrenciNo}/detay")
+    @GetMapping(value = "/ogrenci/{ogrenciNo}/detay", produces = "application/json")
     public ResponseEntity<Map<String, Object>> getOgrenciDetay(
             @Parameter(description = "Student Number", required = true, example = "20180001234")
             @PathVariable String ogrenciNo) {
@@ -662,7 +666,7 @@ public class DataController {
         summary = "Get Progressive Loading Status",
         description = "Returns detailed progressive background loading status and progress"
     )
-    @GetMapping("/cache/progressive-status")
+    @GetMapping(value = "/cache/progressive-status", produces = "application/json")
     public ResponseEntity<Map<String, Object>> getProgressiveStatus() {
         Map<String, Object> status = cacheService.getProgressiveLoadingStatus();
         status.put("timestamp", LocalDateTime.now());
@@ -708,5 +712,167 @@ public class DataController {
         result.put("note", "Progressive loading will continue in background after initial load");
         
         return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 🔐 Akademik personel şifre kontrolü
+     */
+    @Operation(
+        summary = "Academic Staff Password Verification",
+        description = "Verifies academic staff credentials (registry number and password). Password is automatically hashed with MD5."
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Authentication successful"),
+        @ApiResponse(responseCode = "401", description = "Authentication failed"),
+        @ApiResponse(responseCode = "500", description = "Service error")
+    })
+    @PostMapping(value = "/auth/akademik-personel", produces = "application/json")
+    public ResponseEntity<Map<String, Object>> akademikPersonelSifreKontrol(
+            @Parameter(description = "Registry Number (Sicil No)", required = true, example = "12345")
+            @RequestParam String sicilNo,
+            @Parameter(description = "Password (will be MD5 hashed)", required = true)
+            @RequestParam String sifre) {
+        
+        Map<String, Object> result = new HashMap<>();
+        
+        try {
+            logger.info("Akademik personel şifre kontrolü başlatıldı - Sicil No: {}", sicilNo);
+            
+            // Web servis çağrısı
+            String soapResponse = webServiceClient.akademikPersonelSifreKontrol(sicilNo, sifre);
+            
+            // SOAP yanıtını parse et
+            boolean authenticated = parseSoapBooleanResponse(soapResponse);
+            
+            if (authenticated) {
+                result.put("success", true);
+                result.put("message", "Giriş başarılı");
+                result.put("sicilNo", sicilNo);
+                result.put("timestamp", LocalDateTime.now());
+                
+                // Öğretim elemanı detaylarını ekle (cache'ten)
+                if (cacheService.isInitialized()) {
+                    OgretimElemani ogretimElemani = cacheService.getOgretimElemaniBySicil(sicilNo);
+                    if (ogretimElemani != null) {
+                        result.put("adSoyad", ogretimElemani.getAdi() + " " + ogretimElemani.getSoyadi());
+                        result.put("unvan", ogretimElemani.getUnvan());
+                        result.put("fakulte", ogretimElemani.getFakAd());
+                        result.put("bolum", ogretimElemani.getBolAd());
+                        result.put("ePosta", ogretimElemani.getePosta());
+                    }
+                }
+                
+                logger.info("Akademik personel girişi başarılı - Sicil No: {}", sicilNo);
+                return ResponseEntity.ok(result);
+            } else {
+                result.put("success", false);
+                result.put("message", "Sicil numarası veya şifre hatalı");
+                logger.warn("Akademik personel girişi başarısız - Sicil No: {}", sicilNo);
+                return ResponseEntity.status(401).body(result);
+            }
+            
+        } catch (Exception e) {
+            logger.error("Akademik personel şifre kontrolü hatası - Sicil No: {}, Hata: {}", 
+                        sicilNo, e.getMessage(), e);
+            result.put("success", false);
+            result.put("message", "Servis hatası: " + e.getMessage());
+            return ResponseEntity.status(500).body(result);
+        }
+    }
+
+    /**
+     * 🔐 Öğrenci giriş kontrolü
+     */
+    @Operation(
+        summary = "Student Login Verification",
+        description = "Verifies student credentials (student number and password). Password is automatically hashed with MD5."
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Authentication successful"),
+        @ApiResponse(responseCode = "401", description = "Authentication failed"),
+        @ApiResponse(responseCode = "500", description = "Service error")
+    })
+    @PostMapping(value = "/auth/ogrenci", produces = "application/json")
+    public ResponseEntity<Map<String, Object>> ogrenciGirisKontrol(
+            @Parameter(description = "Student Number", required = true, example = "20180001234")
+            @RequestParam String ogrenciNo,
+            @Parameter(description = "Password (will be MD5 hashed)", required = true)
+            @RequestParam String sifre) {
+        
+        Map<String, Object> result = new HashMap<>();
+        
+        try {
+            logger.info("Öğrenci giriş kontrolü başlatıldı - Öğrenci: {}", ogrenciNo);
+            
+            // Web servis çağrısı (şifre otomatik olarak MD5 hash'lenir)
+            String soapResponse = webServiceClient.ogrenciSifreKontrol(ogrenciNo, sifre);
+            
+            // SOAP yanıtını parse et
+            boolean authenticated = parseSoapBooleanResponse(soapResponse);
+            
+            if (authenticated) {
+                result.put("success", true);
+                result.put("message", "Giriş başarılı");
+                result.put("ogrenciNo", ogrenciNo);
+                result.put("timestamp", LocalDateTime.now());
+                
+                // Öğrenci detaylarını ekle (cache'ten)
+                if (cacheService.isInitialized()) {
+                    List<Ders> dersler = cacheService.getDerslerByOgrenciNo(ogrenciNo);
+                    if (!dersler.isEmpty()) {
+                        // İlk dersten öğrenci bilgilerini al
+                        for (Ders ders : dersler) {
+                            List<Ogrenci> ogrenciler = cacheService.getOgrencilerByDersHarId(ders.getDersHarId());
+                            Ogrenci ogrenci = ogrenciler.stream()
+                                .filter(o -> ogrenciNo.equals(o.getOgrNo()))
+                                .findFirst()
+                                .orElse(null);
+                            if (ogrenci != null) {
+                                result.put("adSoyad", ogrenci.getAdi() + " " + ogrenci.getSoyadi());
+                                result.put("fakulte", ogrenci.getFakulte());
+                                result.put("bolum", ogrenci.getBolum());
+                                result.put("program", ogrenci.getProgram());
+                                result.put("sinif", ogrenci.getSinif());
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                logger.info("Öğrenci girişi başarılı - Öğrenci: {}", ogrenciNo);
+                return ResponseEntity.ok(result);
+            } else {
+                result.put("success", false);
+                result.put("message", "Öğrenci numarası veya şifre hatalı");
+                logger.warn("Öğrenci girişi başarısız - Öğrenci: {}", ogrenciNo);
+                return ResponseEntity.status(401).body(result);
+            }
+            
+        } catch (Exception e) {
+            logger.error("Öğrenci giriş kontrolü hatası - Öğrenci: {}, Hata: {}", 
+                        ogrenciNo, e.getMessage(), e);
+            result.put("success", false);
+            result.put("message", "Servis hatası: " + e.getMessage());
+            return ResponseEntity.status(500).body(result);
+        }
+    }
+
+    /**
+     * SOAP yanıtından boolean değer parse eder
+     */
+    private boolean parseSoapBooleanResponse(String soapResponse) {
+        if (soapResponse == null || soapResponse.isEmpty()) {
+            return false;
+        }
+        
+        // SOAP yanıtında "true" veya "1" varsa başarılı
+        // Not: WSDL'de "Sucess" yazıyor (typo), "Success" değil
+        String lowerResponse = soapResponse.toLowerCase();
+        return lowerResponse.contains("<result>true</result>") || 
+               lowerResponse.contains("<result>1</result>") ||
+               lowerResponse.contains("<sucess>true</sucess>") ||  // WSDL typo
+               lowerResponse.contains("<success>true</success>") ||
+               lowerResponse.contains(">true<") ||
+               lowerResponse.contains(">1<");
     }
 }

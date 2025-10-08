@@ -47,11 +47,11 @@ public class OpenApiConfig {
                                 .url("https://opensource.org/licenses/MIT")))
                 .servers(List.of(
                         new Server()
-                                .url("http://193.140.136.26:8080" + contextPath)
-                                .description("Production Server (HTTP)"),
+                                .url("http://localhost:8083" + contextPath)
+                                .description("Development Server (localhost)"),
                         new Server()
-                                .url("http://localhost:8080" + contextPath)
-                                .description("Development Server"),
+                                .url("http://193.140.136.26:8083" + contextPath)
+                                .description("Production Server (HTTP)"),
                         new Server()
                                 .url("https://193.140.136.26:8443" + contextPath)
                                 .description("Production Server (HTTPS)"),
