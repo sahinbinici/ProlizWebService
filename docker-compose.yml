@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: proliz-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - proliz-network
+
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: proliz-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password_change_me}
+      MYSQL_DATABASE: proliz_cache
+      MYSQL_USER: proliz
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-proliz_password_change_me}
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: --default-authentication-plugin=mysql_native_password --max_connections=200
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root_password_change_me}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - proliz-network
+
+  # ProlizWebServices Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: proliz-app
+    ports:
+      - "8083:8083"
+    environment:
+      # Spring Profile
+      SPRING_PROFILES_ACTIVE: docker
+      
+      # Redis Configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CACHE_REDIS_ENABLED: "true"
+      
+      # MySQL Configuration
+      DATABASE_URL: jdbc:mysql://mysql:3306/proliz_cache?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Europe/Istanbul&characterEncoding=UTF-8
+      DATABASE_DRIVER: com.mysql.cj.jdbc.Driver
+      DATABASE_USERNAME: proliz
+      DATABASE_PASSWORD: ${MYSQL_PASSWORD:-proliz_password_change_me}
+      JPA_DIALECT: org.hibernate.dialect.MySQL8Dialect
+      JPA_DDL_AUTO: update
+      JPA_SHOW_SQL: "false"
+      
+      # SOAP Service Credentials
+      SOAP_SERVICE_USERNAME: ${SOAP_USERNAME:-ProLmsGan}
+      SOAP_SERVICE_PASSWORD: ${SOAP_PASSWORD:--2020+Pro*Gan#}
+      
+      # Cache Configuration
+      CACHE_TTL_SOAP: 86400
+      CACHE_TTL_DERS: 3600
+      CACHE_TTL_OGRENCI: 1800
+      CACHE_DISK_DIR: /app/cache
+      CACHE_DISK_MAX_SIZE: 500
+      
+      # Logging
+      LOG_LEVEL_APP: INFO
+      LOG_LEVEL_CLIENT: INFO
+      
+      # JVM Options
+      JAVA_OPTS: -Xmx2G -Xms512M -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+    volumes:
+      - app-cache:/app/cache
+      - app-data:/app/data
+      - app-logs:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/ProlizWebServices/api/cache-management/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - proliz-network
+
+volumes:
+  redis-data:
+    driver: local
+  mysql-data:
+    driver: local
+  app-cache:
+    driver: local
+  app-data:
+    driver: local
+  app-logs:
+    driver: local
+
+networks:
+  proliz-network:
+    driver: bridge

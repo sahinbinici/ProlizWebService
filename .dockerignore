@@ -1,0 +1,15 @@
+target/
+!target/*.war
+.git/
+.gitignore
+.idea/
+.vscode/
+*.iml
+*.log
+logs/
+cache/
+data/
+*.md
+docker-compose.yml
+Dockerfile
+.env
