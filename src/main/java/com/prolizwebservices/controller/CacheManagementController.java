@@ -22,7 +22,13 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/cache-management")
-@CrossOrigin(origins = {"*"})
+@CrossOrigin(
+    origins = {"*"},
+    methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS},
+    allowedHeaders = "*",
+    allowCredentials = "false",
+    maxAge = 3600
+)
 @Tag(name = "Cache Management", description = "Hybrid cache management and monitoring endpoints")
 public class CacheManagementController {
 

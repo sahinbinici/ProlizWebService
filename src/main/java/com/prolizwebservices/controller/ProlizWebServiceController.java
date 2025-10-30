@@ -33,9 +33,13 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(origins = {"*"}, 
-            methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS}, 
-            allowCredentials = "false")
+@CrossOrigin(
+    origins = {"*"},
+    methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS}, 
+    allowedHeaders = "*",
+    allowCredentials = "false",
+    maxAge = 3600
+)
 @Tag(name = "ProlizWebServices", description = "SOAP to REST adapter for Gaziantep University Student Information System")
 public class ProlizWebServiceController {
 

@@ -48,16 +48,22 @@ public class OpenApiConfig {
                 .servers(List.of(
                         new Server()
                                 .url("http://localhost:8083" + contextPath)
-                                .description("Development Server (localhost)"),
+                                .description("Local Development (Embedded Tomcat)"),
+                        new Server()
+                                .url("http://localhost:8080" + contextPath)
+                                .description("Local Development (External Tomcat)"),
+                        new Server()
+                                .url("http://193.140.136.26:8080" + contextPath)
+                                .description("Production Server (HTTP - Port 8080)"),
                         new Server()
                                 .url("http://193.140.136.26:8083" + contextPath)
-                                .description("Production Server (HTTP)"),
+                                .description("Production Server (HTTP - Port 8083)"),
                         new Server()
                                 .url("https://193.140.136.26:8443" + contextPath)
                                 .description("Production Server (HTTPS)"),
                         new Server()
                                 .url("https://proliz.gantep.edu.tr" + contextPath)
-                                .description("University Server")
+                                .description("University Server (HTTPS)")
                 ));
     }
 }

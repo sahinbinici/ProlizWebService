@@ -19,9 +19,13 @@ import com.prolizwebservices.service.DataCacheService;
  */
 @RestController
 @RequestMapping("/")
-@CrossOrigin(origins = {"*"}, 
-            methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS}, 
-            allowCredentials = "false")
+@CrossOrigin(
+    origins = {"*"},
+    methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS},
+    allowedHeaders = "*",
+    allowCredentials = "false",
+    maxAge = 3600
+)
 public class HealthController {
 
     @Autowired
@@ -33,18 +37,18 @@ public class HealthController {
     @GetMapping("/")
     public ResponseEntity<Map<String, Object>> home() {
         Map<String, Object> status = new HashMap<>();
-        
+
         try {
             status.put("service", "ProlizWebServices");
             status.put("status", "UP");
             status.put("timestamp", LocalDateTime.now());
             status.put("message", "Service is running");
-            
+
             // Cache durumu (güvenli kontrol)
             if (cacheService != null) {
                 status.put("cacheInitialized", cacheService.isInitialized());
                 status.put("totalCourses", cacheService.getAllDersler().size());
-                
+
                 Map<String, Object> progressiveStatus = cacheService.getProgressiveLoadingStatus();
                 status.put("cacheProgress", progressiveStatus.get("progressPercent") + "%");
             } else {
@@ -52,16 +56,16 @@ public class HealthController {
                 status.put("totalCourses", 0);
                 status.put("cacheProgress", "0%");
             }
-            
+
             return ResponseEntity.ok(status);
-            
+
         } catch (Exception e) {
             status.put("service", "ProlizWebServices");
             status.put("status", "ERROR");
             status.put("timestamp", LocalDateTime.now());
             status.put("error", e.getMessage());
             status.put("message", "Service has issues");
-            
+
             return ResponseEntity.status(500).body(status);
         }
     }
@@ -89,17 +93,17 @@ public class HealthController {
         info.put("version", "1.0.0");
         info.put("documentation", "/swagger-ui.html");
         info.put("apiDocs", "/api-docs");
-        
+
         Map<String, String> endpoints = new HashMap<>();
         endpoints.put("Health Check", "/health");
-        endpoints.put("API Documentation", "/swagger-ui.html"); 
+        endpoints.put("API Documentation", "/swagger-ui.html");
         endpoints.put("Cache Status", "/api/data/cache/status");
         endpoints.put("Progressive Status", "/api/data/cache/progressive-status");
         endpoints.put("Faculties", "/api/data/fakulteler");
         endpoints.put("Student Courses", "/api/data/ogrenci/{studentNo}/dersler");
-        
+
         info.put("availableEndpoints", endpoints);
-        
+
         return ResponseEntity.ok(info);
     }
 }

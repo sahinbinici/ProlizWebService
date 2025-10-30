@@ -22,9 +22,13 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/notifications")
-@CrossOrigin(origins = {"*"}, 
-            methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS}, 
-            allowCredentials = "false")
+@CrossOrigin(
+    origins = {"*"},
+    methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS}, 
+    allowedHeaders = "*",
+    allowCredentials = "false",
+    maxAge = 3600
+)
 @Tag(name = "Push Notifications", description = "Push notification management for academic staff to send notifications to students")
 @RequiredArgsConstructor
 @Slf4j

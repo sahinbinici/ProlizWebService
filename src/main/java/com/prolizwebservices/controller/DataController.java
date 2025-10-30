@@ -1,8 +1,10 @@
 package com.prolizwebservices.controller;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -38,9 +40,13 @@ import io.swagger.v3.oas.annotations.tags.Tag;
  */
 @RestController
 @RequestMapping("/api/data")
-@CrossOrigin(origins = {"*"}, 
-            methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS}, 
-            allowCredentials = "false")
+@CrossOrigin(
+    origins = {"*"},
+    methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS}, 
+    allowedHeaders = "*",
+    allowCredentials = "false",
+    maxAge = 3600
+)
 @Tag(name = "ProlizWebServices", description = "SOAP to REST adapter for Gaziantep University Student Information System")
 public class DataController {
 
@@ -141,6 +147,47 @@ public class DataController {
         
         Set<String> fakulteler = cacheService.getAllFakulteler();
         return ResponseEntity.ok(fakulteler);
+    }
+
+    /**
+     * Belirtilen fakültenin bölümlerini listele
+     */
+    @Operation(
+        summary = "Get Departments by Faculty",
+        description = "Returns all departments for a specific faculty"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Departments found"),
+        @ApiResponse(responseCode = "202", description = "Cache not ready yet"),
+        @ApiResponse(responseCode = "404", description = "Faculty not found or no departments")
+    })
+    @GetMapping(value = "/fakulte/{fakulteAdi}/bolumler", produces = "application/json")
+    public ResponseEntity<Map<String, Object>> getBolumlerByFakulte(
+            @Parameter(description = "Faculty name", required = true, example = "MÜHENDİSLİK FAKÜLTESİ")
+            @PathVariable String fakulteAdi) {
+        
+        if (!cacheService.isInitialized()) {
+            return ResponseEntity.accepted().build();
+        }
+        
+        Set<String> bolumler = cacheService.getBolumlerByFakulte(fakulteAdi);
+        
+        if (bolumler.isEmpty()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("fakulte", fakulteAdi);
+            result.put("bolumler", Collections.emptyList());
+            result.put("toplamBolum", 0);
+            result.put("mesaj", "Bu fakülte için bölüm bulunamadı");
+            return ResponseEntity.ok(result);
+        }
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("fakulte", fakulteAdi);
+        result.put("bolumler", bolumler);
+        result.put("toplamBolum", bolumler.size());
+        result.put("mesaj", fakulteAdi + " fakültesinde " + bolumler.size() + " bölüm bulundu");
+        
+        return ResponseEntity.ok(result);
     }
 
     /**
@@ -586,12 +633,17 @@ public class DataController {
     }
 
     /**
-     * 👤 Öğrenci detaylarını getir (cache'ten)
+     * 👤 Öğrenci detaylarını getir (cache'ten) - Geliştirilmiş Versiyon
      */
     @Operation(
-        summary = "Get Student Details with Course Info",
-        description = "Returns detailed student information including courses and academic statistics"
+        summary = "Get Comprehensive Student Details",
+        description = "Returns comprehensive student information including personal info, courses, academic statistics, and enrollment details"
     )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Student details retrieved successfully"),
+        @ApiResponse(responseCode = "202", description = "Cache still loading, try again later"),
+        @ApiResponse(responseCode = "404", description = "Student not found")
+    })
     @GetMapping(value = "/ogrenci/{ogrenciNo}/detay", produces = "application/json")
     public ResponseEntity<Map<String, Object>> getOgrenciDetay(
             @Parameter(description = "Student Number", required = true, example = "20180001234")
@@ -599,7 +651,8 @@ public class DataController {
         
         if (!cacheService.isInitialized()) {
             Map<String, Object> result = new HashMap<>();
-            result.put("error", "Cache is still loading");
+            result.put("status", "CACHE_LOADING");
+            result.put("message", "Cache is still loading, please try again in a few moments");
             return ResponseEntity.status(202).body(result);
         }
         
@@ -607,7 +660,11 @@ public class DataController {
         List<Ders> dersler = cacheService.getDerslerByOgrenciNo(ogrenciNo);
         
         if (dersler.isEmpty()) {
-            return ResponseEntity.notFound().build();
+            Map<String, Object> result = new HashMap<>();
+            result.put("error", "Öğrenci bulunamadı");
+            result.put("ogrenciNo", ogrenciNo);
+            result.put("mesaj", "Bu öğrenci numarası için kayıt bulunamadı");
+            return ResponseEntity.status(404).body(result);
         }
         
         // İlk dersten öğrenci bilgilerini al (tüm derslerde aynı öğrenci bilgileri var)
@@ -623,20 +680,38 @@ public class DataController {
         
         // Response oluştur
         Map<String, Object> result = new HashMap<>();
-        if (ogrenciOrnek != null) {
-            result.put("ogrNo", ogrenciOrnek.getOgrNo());
-            result.put("tcKimlikNo", ogrenciOrnek.getTcKimlikNo());
-            result.put("adSoyad", ogrenciOrnek.getAdi() + " " + ogrenciOrnek.getSoyadi());
-            result.put("fakulte", ogrenciOrnek.getFakulte());
-            result.put("bolum", ogrenciOrnek.getBolum());
-            result.put("program", ogrenciOrnek.getProgram());
-            result.put("sinif", ogrenciOrnek.getSinif());
-        }
         
+        // 📋 KİŞİSEL BİLGİLER
+        Map<String, Object> kisiselBilgiler = new HashMap<>();
+        if (ogrenciOrnek != null) {
+            kisiselBilgiler.put("ogrenciNo", ogrenciOrnek.getOgrNo());
+            kisiselBilgiler.put("tcKimlikNo", ogrenciOrnek.getTcKimlikNo());
+            kisiselBilgiler.put("adi", ogrenciOrnek.getAdi());
+            kisiselBilgiler.put("soyadi", ogrenciOrnek.getSoyadi());
+            kisiselBilgiler.put("adSoyad", ogrenciOrnek.getAdi() + " " + ogrenciOrnek.getSoyadi());
+        }
+        result.put("kisiselBilgiler", kisiselBilgiler);
+        
+        // 🎓 AKADEMİK BİLGİLER
+        Map<String, Object> akademikBilgiler = new HashMap<>();
+        if (ogrenciOrnek != null) {
+            akademikBilgiler.put("fakulte", ogrenciOrnek.getFakulte() != null ? ogrenciOrnek.getFakulte() : "");
+            akademikBilgiler.put("bolum", ogrenciOrnek.getBolum() != null ? ogrenciOrnek.getBolum() : "");
+            akademikBilgiler.put("program", ogrenciOrnek.getProgram() != null ? ogrenciOrnek.getProgram() : "");
+            akademikBilgiler.put("sinif", ogrenciOrnek.getSinif() != null ? ogrenciOrnek.getSinif() : "");
+            akademikBilgiler.put("ogrenimDurumu", ogrenciOrnek.getOgrenimDurum() != null ? ogrenciOrnek.getOgrenimDurum() : "");
+            akademikBilgiler.put("kayitNedeni", ogrenciOrnek.getKayitNeden() != null ? ogrenciOrnek.getKayitNeden() : "");
+        }
+        result.put("akademikBilgiler", akademikBilgiler);
+        
+        // 📚 DERS BİLGİLERİ
         result.put("aktifDersler", dersler);
         result.put("toplamDersSayisi", dersler.size());
         
-        // Kredi hesaplama
+        // 📊 KREDİ İSTATİSTİKLERİ
+        Map<String, Object> krediIstatistikleri = new HashMap<>();
+        
+        // Toplam Kredi hesaplama
         double toplamKredi = dersler.stream()
             .filter(d -> d.getKredi() != null)
             .mapToDouble(d -> {
@@ -644,9 +719,9 @@ public class DataController {
                 catch (NumberFormatException e) { return 0.0; }
             })
             .sum();
-        result.put("toplamKredi", toplamKredi);
+        krediIstatistikleri.put("toplamKredi", toplamKredi);
         
-        // AKTS hesaplama  
+        // Toplam AKTS hesaplama  
         double toplamAKTS = dersler.stream()
             .filter(d -> d.getAkts() != null)
             .mapToDouble(d -> {
@@ -654,7 +729,69 @@ public class DataController {
                 catch (NumberFormatException e) { return 0.0; }
             })
             .sum();
-        result.put("toplamAKTS", toplamAKTS);
+        krediIstatistikleri.put("toplamAKTS", toplamAKTS);
+        
+        // Ortalama kredi/ders
+        krediIstatistikleri.put("ortalamaKrediPerDers", dersler.size() > 0 ? toplamKredi / dersler.size() : 0);
+        krediIstatistikleri.put("ortalamaAKTSPerDers", dersler.size() > 0 ? toplamAKTS / dersler.size() : 0);
+        
+        result.put("krediIstatistikleri", krediIstatistikleri);
+        
+        // 📈 DERS İSTATİSTİKLERİ
+        Map<String, Object> dersIstatistikleri = new HashMap<>();
+        
+        // Dönem bazında ders sayısı
+        Map<String, Long> donemBazinda = dersler.stream()
+            .filter(d -> d.getDonemAd() != null)
+            .collect(Collectors.groupingBy(Ders::getDonemAd, Collectors.counting()));
+        dersIstatistikleri.put("donemBazinda", donemBazinda);
+        
+        // Fakülte bazında ders sayısı
+        Map<String, Long> fakulteBazinda = dersler.stream()
+            .filter(d -> d.getFakAd() != null)
+            .collect(Collectors.groupingBy(Ders::getFakAd, Collectors.counting()));
+        dersIstatistikleri.put("fakulteBazinda", fakulteBazinda);
+        
+        // Bölüm bazında ders sayısı
+        Map<String, Long> bolumBazinda = dersler.stream()
+            .filter(d -> d.getBolAd() != null)
+            .collect(Collectors.groupingBy(Ders::getBolAd, Collectors.counting()));
+        dersIstatistikleri.put("bolumBazinda", bolumBazinda);
+        
+        result.put("dersIstatistikleri", dersIstatistikleri);
+        
+        // 👨‍🏫 ÖĞRETİM ELEMANLARI
+        List<Map<String, String>> ogretimElemanlari = new ArrayList<>();
+        Set<String> uniqueOgretimElemanlari = new HashSet<>();
+        
+        for (Ders ders : dersler) {
+            if (ders.getOgretimElemaniTC() != null && !uniqueOgretimElemanlari.contains(ders.getOgretimElemaniTC())) {
+                uniqueOgretimElemanlari.add(ders.getOgretimElemaniTC());
+                OgretimElemani eleman = cacheService.getOgretimElemaniByTC(ders.getOgretimElemaniTC());
+                if (eleman != null) {
+                    Map<String, String> elemanBilgi = new HashMap<>();
+                    elemanBilgi.put("adSoyad", eleman.getAdi() + " " + eleman.getSoyadi());
+                    elemanBilgi.put("unvan", eleman.getUnvan() != null ? eleman.getUnvan() : "");
+                    elemanBilgi.put("bolum", eleman.getBolAd() != null ? eleman.getBolAd() : "");
+                    elemanBilgi.put("ePosta", eleman.getePosta() != null ? eleman.getePosta() : "");
+                    ogretimElemanlari.add(elemanBilgi);
+                }
+            }
+        }
+        result.put("ogretimElemanlari", ogretimElemanlari);
+        result.put("toplamOgretimElemani", ogretimElemanlari.size());
+        
+        // 📝 ÖZET MESAJ
+        if (ogrenciOrnek != null) {
+            String mesaj = String.format("%s - %s %s bölümü %s. sınıf öğrencisi. %d aktif dersi bulunmaktadır.",
+                ogrenciOrnek.getOgrNo(),
+                ogrenciOrnek.getFakulte() != null ? ogrenciOrnek.getFakulte() : "",
+                ogrenciOrnek.getBolum() != null ? ogrenciOrnek.getBolum() : "",
+                ogrenciOrnek.getSinif() != null ? ogrenciOrnek.getSinif() : "",
+                dersler.size()
+            );
+            result.put("mesaj", mesaj);
+        }
         
         return ResponseEntity.ok(result);
     }
@@ -712,6 +849,503 @@ public class DataController {
         result.put("note", "Progressive loading will continue in background after initial load");
         
         return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 📚 Tüm öğrencileri listele (sayfalı)
+     */
+    @Operation(
+        summary = "Get All Students with Pagination",
+        description = "Returns paginated list of all unique students from cached courses"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Students retrieved successfully"),
+        @ApiResponse(responseCode = "202", description = "Cache still loading, try again later")
+    })
+    @GetMapping(value = "/ogrenciler", produces = "application/json")
+    public ResponseEntity<Map<String, Object>> getAllOgrenciler(
+            @Parameter(description = "Page number (0-based)", example = "0")
+            @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Page size (max 100)", example = "20")
+            @RequestParam(defaultValue = "20") int size) {
+        
+        if (!cacheService.isInitialized()) {
+            return ResponseEntity.accepted().build();
+        }
+        
+        List<Ogrenci> allOgrenciler = cacheService.getAllOgrenciler();
+        
+        // Pagination uygula
+        int totalElements = allOgrenciler.size();
+        int pageSize = Math.min(size, 100); // Max 100
+        int startIndex = page * pageSize;
+        int endIndex = Math.min(startIndex + pageSize, totalElements);
+        
+        List<Ogrenci> pagedOgrenciler = Collections.emptyList();
+        if (startIndex < totalElements) {
+            pagedOgrenciler = allOgrenciler.subList(startIndex, endIndex);
+        }
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("content", pagedOgrenciler);
+        response.put("page", page);
+        response.put("size", pageSize);
+        response.put("totalElements", totalElements);
+        response.put("totalPages", (int) Math.ceil((double) totalElements / pageSize));
+        response.put("first", page == 0);
+        response.put("last", endIndex >= totalElements);
+        
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 📚 Tüm öğretim elemanlarını listele (sayfalı)
+     */
+    @Operation(
+        summary = "Get All Faculty Members with Pagination",
+        description = "Returns paginated list of all faculty members"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Faculty members retrieved successfully"),
+        @ApiResponse(responseCode = "202", description = "Cache still loading, try again later")
+    })
+    @GetMapping(value = "/ogretim-elemanlari", produces = "application/json")
+    public ResponseEntity<Map<String, Object>> getAllOgretimElemanlari(
+            @Parameter(description = "Page number (0-based)", example = "0")
+            @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Page size (max 100)", example = "20")
+            @RequestParam(defaultValue = "20") int size) {
+        
+        if (!cacheService.isInitialized()) {
+            return ResponseEntity.accepted().build();
+        }
+        
+        List<OgretimElemani> allOgretimElemanlari = cacheService.getAllOgretimElemanlari();
+        
+        // Pagination uygula
+        int totalElements = allOgretimElemanlari.size();
+        int pageSize = Math.min(size, 100); // Max 100
+        int startIndex = page * pageSize;
+        int endIndex = Math.min(startIndex + pageSize, totalElements);
+        
+        List<OgretimElemani> pagedElemanlar = Collections.emptyList();
+        if (startIndex < totalElements) {
+            pagedElemanlar = allOgretimElemanlari.subList(startIndex, endIndex);
+        }
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("content", pagedElemanlar);
+        response.put("page", page);
+        response.put("size", pageSize);
+        response.put("totalElements", totalElements);
+        response.put("totalPages", (int) Math.ceil((double) totalElements / pageSize));
+        response.put("first", page == 0);
+        response.put("last", endIndex >= totalElements);
+        
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 🎓 Sınıf bazında öğrencileri listele
+     */
+    @Operation(
+        summary = "Get Students by Class",
+        description = "Returns all students in a specific class"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Students retrieved successfully"),
+        @ApiResponse(responseCode = "202", description = "Cache still loading, try again later"),
+        @ApiResponse(responseCode = "404", description = "No students found for this class")
+    })
+    @GetMapping(value = "/sinif/{sinif}/ogrenciler", produces = "application/json")
+    public ResponseEntity<Map<String, Object>> getOgrencilerBySinif(
+            @Parameter(description = "Class name", required = true, example = "1")
+            @PathVariable String sinif) {
+        
+        if (!cacheService.isInitialized()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("status", "CACHE_LOADING");
+            result.put("message", "Cache is still loading, please try again in a few moments");
+            return ResponseEntity.status(202).body(result);
+        }
+        
+        List<Ogrenci> ogrenciler = cacheService.getOgrencilerBySinif(sinif);
+        
+        if (ogrenciler.isEmpty()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("sinif", sinif);
+            result.put("ogrenciler", Collections.emptyList());
+            result.put("toplamOgrenci", 0);
+            result.put("mesaj", "Bu sınıf için öğrenci bulunamadı");
+            return ResponseEntity.ok(result);
+        }
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("sinif", sinif);
+        result.put("ogrenciler", ogrenciler);
+        result.put("toplamOgrenci", ogrenciler.size());
+        result.put("mesaj", sinif + ". sınıfta " + ogrenciler.size() + " öğrenci bulundu");
+        
+        // Fakülte bazında grupla
+        Map<String, Long> fakulteGrubu = ogrenciler.stream()
+            .filter(o -> o.getFakulte() != null)
+            .collect(Collectors.groupingBy(Ogrenci::getFakulte, Collectors.counting()));
+        result.put("fakulteBazinda", fakulteGrubu);
+        
+        // Bölüm bazında grupla
+        Map<String, Long> bolumGrubu = ogrenciler.stream()
+            .filter(o -> o.getBolum() != null)
+            .collect(Collectors.groupingBy(Ogrenci::getBolum, Collectors.counting()));
+        result.put("bolumBazinda", bolumGrubu);
+        
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 🏛️ Fakülte bazında öğrencileri listele
+     */
+    @Operation(
+        summary = "Get Students by Faculty",
+        description = "Returns all students in a specific faculty"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Students retrieved successfully"),
+        @ApiResponse(responseCode = "202", description = "Cache still loading, try again later"),
+        @ApiResponse(responseCode = "404", description = "No students found for this faculty")
+    })
+    @GetMapping(value = "/fakulte/{fakulteAdi}/ogrenciler", produces = "application/json")
+    public ResponseEntity<Map<String, Object>> getOgrencilerByFakulte(
+            @Parameter(description = "Faculty name", required = true, example = "MÜHENDİSLİK FAKÜLTESİ")
+            @PathVariable String fakulteAdi) {
+        
+        if (!cacheService.isInitialized()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("status", "CACHE_LOADING");
+            result.put("message", "Cache is still loading, please try again in a few moments");
+            return ResponseEntity.status(202).body(result);
+        }
+        
+        List<Ogrenci> ogrenciler = cacheService.getOgrencilerByFakulte(fakulteAdi);
+        
+        if (ogrenciler.isEmpty()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("fakulte", fakulteAdi);
+            result.put("ogrenciler", Collections.emptyList());
+            result.put("toplamOgrenci", 0);
+            result.put("mesaj", "Bu fakülte için öğrenci bulunamadı");
+            return ResponseEntity.ok(result);
+        }
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("fakulte", fakulteAdi);
+        result.put("ogrenciler", ogrenciler);
+        result.put("toplamOgrenci", ogrenciler.size());
+        result.put("mesaj", fakulteAdi + " fakültesinde " + ogrenciler.size() + " öğrenci bulundu");
+        
+        // Bölüm bazında grupla
+        Map<String, Long> bolumGrubu = ogrenciler.stream()
+            .filter(o -> o.getBolum() != null)
+            .collect(Collectors.groupingBy(Ogrenci::getBolum, Collectors.counting()));
+        result.put("bolumBazinda", bolumGrubu);
+        
+        // Sınıf bazında grupla
+        Map<String, Long> sinifGrubu = ogrenciler.stream()
+            .filter(o -> o.getSinif() != null)
+            .collect(Collectors.groupingBy(Ogrenci::getSinif, Collectors.counting()));
+        result.put("sinifBazinda", sinifGrubu);
+        
+        // Program bazında grupla
+        Map<String, Long> programGrubu = ogrenciler.stream()
+            .filter(o -> o.getProgram() != null)
+            .collect(Collectors.groupingBy(Ogrenci::getProgram, Collectors.counting()));
+        result.put("programBazinda", programGrubu);
+        
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 🏢 Bölüm bazında öğrencileri listele
+     */
+    @Operation(
+        summary = "Get Students by Department",
+        description = "Returns all students in a specific department"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Students retrieved successfully"),
+        @ApiResponse(responseCode = "202", description = "Cache still loading, try again later"),
+        @ApiResponse(responseCode = "404", description = "No students found for this department")
+    })
+    @GetMapping(value = "/bolum/{bolumAdi}/ogrenciler", produces = "application/json")
+    public ResponseEntity<Map<String, Object>> getOgrencilerByBolum(
+            @Parameter(description = "Department name", required = true, example = "BİLGİSAYAR MÜHENDİSLİĞİ")
+            @PathVariable String bolumAdi) {
+        
+        if (!cacheService.isInitialized()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("status", "CACHE_LOADING");
+            result.put("message", "Cache is still loading, please try again in a few moments");
+            return ResponseEntity.status(202).body(result);
+        }
+        
+        List<Ogrenci> ogrenciler = cacheService.getOgrencilerByBolum(bolumAdi);
+        
+        if (ogrenciler.isEmpty()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("bolum", bolumAdi);
+            result.put("ogrenciler", Collections.emptyList());
+            result.put("toplamOgrenci", 0);
+            result.put("mesaj", "Bu bölüm için öğrenci bulunamadı");
+            return ResponseEntity.ok(result);
+        }
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("bolum", bolumAdi);
+        result.put("ogrenciler", ogrenciler);
+        result.put("toplamOgrenci", ogrenciler.size());
+        result.put("mesaj", bolumAdi + " bölümünde " + ogrenciler.size() + " öğrenci bulundu");
+        
+        // Sınıf bazında grupla
+        Map<String, Long> sinifGrubu = ogrenciler.stream()
+            .filter(o -> o.getSinif() != null)
+            .collect(Collectors.groupingBy(Ogrenci::getSinif, Collectors.counting()));
+        result.put("sinifBazinda", sinifGrubu);
+        
+        // Program bazında grupla
+        Map<String, Long> programGrubu = ogrenciler.stream()
+            .filter(o -> o.getProgram() != null)
+            .collect(Collectors.groupingBy(Ogrenci::getProgram, Collectors.counting()));
+        result.put("programBazinda", programGrubu);
+        
+        // Fakülte bilgisi
+        String fakulte = ogrenciler.stream()
+            .map(Ogrenci::getFakulte)
+            .filter(f -> f != null)
+            .findFirst()
+            .orElse("Bilinmiyor");
+        result.put("fakulte", fakulte);
+        
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 👨‍🏫 Ünvan bazında öğretim elemanlarını listele
+     */
+    @Operation(
+        summary = "Get Faculty Members by Title",
+        description = "Returns all faculty members with a specific academic title"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Faculty members retrieved successfully"),
+        @ApiResponse(responseCode = "202", description = "Cache still loading, try again later"),
+        @ApiResponse(responseCode = "404", description = "No faculty members found for this title")
+    })
+    @GetMapping(value = "/unvan/{unvan}/ogretim-elemanlari", produces = "application/json")
+    public ResponseEntity<Map<String, Object>> getOgretimElemanlariByUnvan(
+            @Parameter(description = "Academic title", required = true, example = "Prof. Dr.")
+            @PathVariable String unvan) {
+        
+        if (!cacheService.isInitialized()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("status", "CACHE_LOADING");
+            result.put("message", "Cache is still loading, please try again in a few moments");
+            return ResponseEntity.status(202).body(result);
+        }
+        
+        List<OgretimElemani> elemanlar = cacheService.getOgretimElemanlariByUnvan(unvan);
+        
+        if (elemanlar.isEmpty()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("unvan", unvan);
+            result.put("ogretimElemanlari", Collections.emptyList());
+            result.put("toplamEleman", 0);
+            result.put("mesaj", "Bu ünvan için öğretim elemanı bulunamadı");
+            return ResponseEntity.ok(result);
+        }
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("unvan", unvan);
+        result.put("ogretimElemanlari", elemanlar);
+        result.put("toplamEleman", elemanlar.size());
+        result.put("mesaj", unvan + " ünvanında " + elemanlar.size() + " öğretim elemanı bulundu");
+        
+        // Fakülte bazında grupla
+        Map<String, Long> fakulteGrubu = elemanlar.stream()
+            .filter(e -> e.getFakAd() != null)
+            .collect(Collectors.groupingBy(OgretimElemani::getFakAd, Collectors.counting()));
+        result.put("fakulteBazinda", fakulteGrubu);
+        
+        // Bölüm bazında grupla
+        Map<String, Long> bolumGrubu = elemanlar.stream()
+            .filter(e -> e.getBolAd() != null)
+            .collect(Collectors.groupingBy(OgretimElemani::getBolAd, Collectors.counting()));
+        result.put("bolumBazinda", bolumGrubu);
+        
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 🏢 Bölüm bazında öğretim elemanlarını listele
+     */
+    @Operation(
+        summary = "Get Faculty Members by Department",
+        description = "Returns all faculty members in a specific department"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Faculty members retrieved successfully"),
+        @ApiResponse(responseCode = "202", description = "Cache still loading, try again later"),
+        @ApiResponse(responseCode = "404", description = "No faculty members found for this department")
+    })
+    @GetMapping(value = "/bolum/{bolumAdi}/ogretim-elemanlari", produces = "application/json")
+    public ResponseEntity<Map<String, Object>> getOgretimElemanlariByBolum(
+            @Parameter(description = "Department name", required = true, example = "BİLGİSAYAR MÜHENDİSLİĞİ")
+            @PathVariable String bolumAdi) {
+        
+        if (!cacheService.isInitialized()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("status", "CACHE_LOADING");
+            result.put("message", "Cache is still loading, please try again in a few moments");
+            return ResponseEntity.status(202).body(result);
+        }
+        
+        List<OgretimElemani> elemanlar = cacheService.getOgretimElemanlariByBolum(bolumAdi);
+        
+        if (elemanlar.isEmpty()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("bolum", bolumAdi);
+            result.put("ogretimElemanlari", Collections.emptyList());
+            result.put("toplamEleman", 0);
+            result.put("mesaj", "Bu bölüm için öğretim elemanı bulunamadı");
+            return ResponseEntity.ok(result);
+        }
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("bolum", bolumAdi);
+        result.put("ogretimElemanlari", elemanlar);
+        result.put("toplamEleman", elemanlar.size());
+        result.put("mesaj", bolumAdi + " bölümünde " + elemanlar.size() + " öğretim elemanı bulundu");
+        
+        // Ünvan bazında grupla
+        Map<String, Long> unvanGrubu = elemanlar.stream()
+            .filter(e -> e.getUnvan() != null)
+            .collect(Collectors.groupingBy(OgretimElemani::getUnvan, Collectors.counting()));
+        result.put("unvanBazinda", unvanGrubu);
+        
+        // Fakülte bilgisi
+        String fakulte = elemanlar.stream()
+            .map(OgretimElemani::getFakAd)
+            .filter(f -> f != null)
+            .findFirst()
+            .orElse("Bilinmiyor");
+        result.put("fakulte", fakulte);
+        
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 🏛️ Fakülte bazında öğretim elemanlarını listele
+     */
+    @Operation(
+        summary = "Get Faculty Members by Faculty",
+        description = "Returns all faculty members in a specific faculty"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Faculty members retrieved successfully"),
+        @ApiResponse(responseCode = "202", description = "Cache still loading, try again later"),
+        @ApiResponse(responseCode = "404", description = "No faculty members found for this faculty")
+    })
+    @GetMapping(value = "/fakulte/{fakulteAdi}/ogretim-elemanlari", produces = "application/json")
+    public ResponseEntity<Map<String, Object>> getOgretimElemanlariByFakulte(
+            @Parameter(description = "Faculty name", required = true, example = "MÜHENDİSLİK FAKÜLTESİ")
+            @PathVariable String fakulteAdi) {
+        
+        if (!cacheService.isInitialized()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("status", "CACHE_LOADING");
+            result.put("message", "Cache is still loading, please try again in a few moments");
+            return ResponseEntity.status(202).body(result);
+        }
+        
+        List<OgretimElemani> elemanlar = cacheService.getOgretimElemanlariByFakulte(fakulteAdi);
+        
+        if (elemanlar.isEmpty()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("fakulte", fakulteAdi);
+            result.put("ogretimElemanlari", Collections.emptyList());
+            result.put("toplamEleman", 0);
+            result.put("mesaj", "Bu fakülte için öğretim elemanı bulunamadı");
+            return ResponseEntity.ok(result);
+        }
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("fakulte", fakulteAdi);
+        result.put("ogretimElemanlari", elemanlar);
+        result.put("toplamEleman", elemanlar.size());
+        result.put("mesaj", fakulteAdi + " fakültesinde " + elemanlar.size() + " öğretim elemanı bulundu");
+        
+        // Ünvan bazında grupla
+        Map<String, Long> unvanGrubu = elemanlar.stream()
+            .filter(e -> e.getUnvan() != null)
+            .collect(Collectors.groupingBy(OgretimElemani::getUnvan, Collectors.counting()));
+        result.put("unvanBazinda", unvanGrubu);
+        
+        // Bölüm bazında grupla
+        Map<String, Long> bolumGrubu = elemanlar.stream()
+            .filter(e -> e.getBolAd() != null)
+            .collect(Collectors.groupingBy(OgretimElemani::getBolAd, Collectors.counting()));
+        result.put("bolumBazinda", bolumGrubu);
+        
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 📋 Tüm sınıfları listele
+     */
+    @Operation(
+        summary = "Get All Classes",
+        description = "Returns list of all unique class names"
+    )
+    @GetMapping(value = "/siniflar", produces = "application/json")
+    public ResponseEntity<Set<String>> getAllSiniflar() {
+        if (!cacheService.isInitialized()) {
+            return ResponseEntity.accepted().build();
+        }
+        
+        Set<String> siniflar = cacheService.getAllSiniflar();
+        return ResponseEntity.ok(siniflar);
+    }
+
+    /**
+     * 📋 Tüm ünvanları listele
+     */
+    @Operation(
+        summary = "Get All Academic Titles",
+        description = "Returns list of all unique academic titles"
+    )
+    @GetMapping(value = "/unvanlar", produces = "application/json")
+    public ResponseEntity<Set<String>> getAllUnvanlar() {
+        if (!cacheService.isInitialized()) {
+            return ResponseEntity.accepted().build();
+        }
+        
+        Set<String> unvanlar = cacheService.getAllUnvanlar();
+        return ResponseEntity.ok(unvanlar);
+    }
+
+    /**
+     * 📋 Tüm bölümleri listele
+     */
+    @Operation(
+        summary = "Get All Departments",
+        description = "Returns list of all unique department names"
+    )
+    @GetMapping(value = "/bolumler", produces = "application/json")
+    public ResponseEntity<Set<String>> getAllBolumler() {
+        if (!cacheService.isInitialized()) {
+            return ResponseEntity.accepted().build();
+        }
+        
+        Set<String> bolumler = cacheService.getAllBolumler();
+        return ResponseEntity.ok(bolumler);
     }
 
     /**

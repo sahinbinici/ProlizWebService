@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -518,6 +519,167 @@ public class DataCacheService {
 
     public List<OgretimElemani> getOgretimElemanlariByFakulte(String fakulteAdi) {
         return fakulteOgretimElemaniIndex.getOrDefault(fakulteAdi, new ArrayList<>());
+    }
+
+    /**
+     * Bölüm bazında öğretim elemanlarını getirir
+     */
+    public List<OgretimElemani> getOgretimElemanlariByBolum(String bolumAdi) {
+        return allOgretimElemanlari.stream()
+            .filter(eleman -> eleman.getBolAd() != null && eleman.getBolAd().equalsIgnoreCase(bolumAdi))
+            .collect(Collectors.toList());
+    }
+
+    /**
+     * Ünvan bazında öğretim elemanlarını getirir
+     */
+    public List<OgretimElemani> getOgretimElemanlariByUnvan(String unvan) {
+        return allOgretimElemanlari.stream()
+            .filter(eleman -> eleman.getUnvan() != null && eleman.getUnvan().equalsIgnoreCase(unvan))
+            .collect(Collectors.toList());
+    }
+
+    /**
+     * Tüm öğrencileri getirir (cache'teki tüm derslerden)
+     */
+    public List<Ogrenci> getAllOgrenciler() {
+        // Tüm derslerdeki öğrencileri topla ve benzersiz yap (TC Kimlik No bazında)
+        Map<String, Ogrenci> uniqueOgrenciler = new HashMap<>();
+        
+        for (List<Ogrenci> ogrenciler : dersOgrencileriMap.values()) {
+            for (Ogrenci ogrenci : ogrenciler) {
+                if (ogrenci.getTcKimlikNo() != null && !ogrenci.getTcKimlikNo().isEmpty()) {
+                    // TC Kimlik No'ya göre benzersiz tut
+                    uniqueOgrenciler.putIfAbsent(ogrenci.getTcKimlikNo(), ogrenci);
+                } else if (ogrenci.getOgrNo() != null && !ogrenci.getOgrNo().isEmpty()) {
+                    // TC yoksa öğrenci numarasına göre benzersiz tut
+                    uniqueOgrenciler.putIfAbsent(ogrenci.getOgrNo(), ogrenci);
+                }
+            }
+        }
+        
+        return new ArrayList<>(uniqueOgrenciler.values());
+    }
+
+    /**
+     * Sınıf bazında öğrencileri getirir
+     */
+    public List<Ogrenci> getOgrencilerBySinif(String sinif) {
+        // Tüm derslerdeki öğrencileri topla ve sınıfa göre filtrele
+        Map<String, Ogrenci> uniqueOgrenciler = new HashMap<>();
+        
+        for (List<Ogrenci> ogrenciler : dersOgrencileriMap.values()) {
+            for (Ogrenci ogrenci : ogrenciler) {
+                if (ogrenci.getSinif() != null && ogrenci.getSinif().equalsIgnoreCase(sinif)) {
+                    String key = ogrenci.getTcKimlikNo() != null ? ogrenci.getTcKimlikNo() : ogrenci.getOgrNo();
+                    if (key != null) {
+                        uniqueOgrenciler.putIfAbsent(key, ogrenci);
+                    }
+                }
+            }
+        }
+        
+        return new ArrayList<>(uniqueOgrenciler.values());
+    }
+
+    /**
+     * Fakülte bazında öğrencileri getirir
+     */
+    public List<Ogrenci> getOgrencilerByFakulte(String fakulteAdi) {
+        // Tüm derslerdeki öğrencileri topla ve fakülteye göre filtrele
+        Map<String, Ogrenci> uniqueOgrenciler = new HashMap<>();
+        
+        for (List<Ogrenci> ogrenciler : dersOgrencileriMap.values()) {
+            for (Ogrenci ogrenci : ogrenciler) {
+                if (ogrenci.getFakulte() != null && ogrenci.getFakulte().equalsIgnoreCase(fakulteAdi)) {
+                    String key = ogrenci.getTcKimlikNo() != null ? ogrenci.getTcKimlikNo() : ogrenci.getOgrNo();
+                    if (key != null) {
+                        uniqueOgrenciler.putIfAbsent(key, ogrenci);
+                    }
+                }
+            }
+        }
+        
+        return new ArrayList<>(uniqueOgrenciler.values());
+    }
+
+    /**
+     * Bölüm bazında öğrencileri getirir
+     */
+    public List<Ogrenci> getOgrencilerByBolum(String bolumAdi) {
+        // Tüm derslerdeki öğrencileri topla ve bölüme göre filtrele
+        Map<String, Ogrenci> uniqueOgrenciler = new HashMap<>();
+        
+        for (List<Ogrenci> ogrenciler : dersOgrencileriMap.values()) {
+            for (Ogrenci ogrenci : ogrenciler) {
+                if (ogrenci.getBolum() != null && ogrenci.getBolum().equalsIgnoreCase(bolumAdi)) {
+                    String key = ogrenci.getTcKimlikNo() != null ? ogrenci.getTcKimlikNo() : ogrenci.getOgrNo();
+                    if (key != null) {
+                        uniqueOgrenciler.putIfAbsent(key, ogrenci);
+                    }
+                }
+            }
+        }
+        
+        return new ArrayList<>(uniqueOgrenciler.values());
+    }
+
+    /**
+     * Tüm benzersiz ünvanları getirir
+     */
+    public Set<String> getAllUnvanlar() {
+        return allOgretimElemanlari.stream()
+            .map(OgretimElemani::getUnvan)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+    }
+
+    /**
+     * Tüm benzersiz bölümleri getirir
+     */
+    public Set<String> getAllBolumler() {
+        return allOgretimElemanlari.stream()
+            .map(OgretimElemani::getBolAd)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+    }
+
+    /**
+     * Belirli bir fakülteye ait bölümleri getirir
+     */
+    public Set<String> getBolumlerByFakulte(String fakulteAdi) {
+        // Önce öğretim elemanlarından bölümleri topla
+        Set<String> bolumler = allOgretimElemanlari.stream()
+            .filter(eleman -> eleman.getFakAd() != null && eleman.getFakAd().equalsIgnoreCase(fakulteAdi))
+            .map(OgretimElemani::getBolAd)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        
+        // Derslerden de bölümleri ekle (daha kapsamlı sonuç için)
+        Set<String> derslerdenBolumler = allDersler.stream()
+            .filter(ders -> ders.getFakAd() != null && ders.getFakAd().equalsIgnoreCase(fakulteAdi))
+            .map(Ders::getBolAd)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        
+        bolumler.addAll(derslerdenBolumler);
+        
+        return bolumler;
+    }
+
+    /**
+     * Tüm benzersiz sınıfları getirir
+     */
+    public Set<String> getAllSiniflar() {
+        Set<String> siniflar = new HashSet<>();
+        for (List<Ogrenci> ogrenciler : dersOgrencileriMap.values()) {
+            for (Ogrenci ogrenci : ogrenciler) {
+                if (ogrenci.getSinif() != null && !ogrenci.getSinif().isEmpty()) {
+                    siniflar.add(ogrenci.getSinif());
+                }
+            }
+        }
+        return siniflar;
     }
 
     public List<Ogrenci> getOgrencilerByDersHarId(String dersHarId) {
