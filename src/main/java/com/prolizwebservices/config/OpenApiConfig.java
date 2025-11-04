@@ -53,11 +53,8 @@ public class OpenApiConfig {
                                 .url("http://localhost:8080" + contextPath)
                                 .description("Local Development (External Tomcat)"),
                         new Server()
-                                .url("http://193.140.136.26:8080" + contextPath)
-                                .description("Production Server (HTTP - Port 8080)"),
-                        new Server()
-                                .url("http://193.140.136.26:8083" + contextPath)
-                                .description("Production Server (HTTP - Port 8083)"),
+                                .url("http://193.140.136.26:8084" + contextPath)
+                                .description("Production Server (HTTP - Port 8084)"),
                         new Server()
                                 .url("https://193.140.136.26:8443" + contextPath)
                                 .description("Production Server (HTTPS)"),

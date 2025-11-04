@@ -16,7 +16,7 @@ import java.util.Collections;
 /**
  * Global CORS Configuration
  * Swagger UI ve tüm API endpoint'leri için CORS ayarları
- * 
+ *
  * NOT: SimpleCorsFilter ile birlikte çalışıyor (iki katmanlı koruma)
  */
 @Configuration
@@ -26,7 +26,7 @@ public class CorsConfig implements WebMvcConfigurer {
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
                 .allowedOriginPatterns("*")
-                .allowedOrigins("*")
+                .allowedOrigins("http://193.140.136.26:8084", "http://193.140.136.26", "https://193.140.136.26:8084", "https://193.140.136.26", "*")
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH")
                 .allowedHeaders("*")
                 .exposedHeaders("*")
@@ -43,15 +43,15 @@ public class CorsConfig implements WebMvcConfigurer {
     public CorsFilter corsFilter() {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         CorsConfiguration config = new CorsConfiguration();
-        
+
         // Tüm origin'lere izin ver
         config.setAllowCredentials(false);
-        config.setAllowedOriginPatterns(Collections.singletonList("*"));
-        config.addAllowedOrigin("*");
-        
+        config.setAllowedOriginPatterns(Arrays.asList("*"));
+        config.setAllowedOrigins(Arrays.asList("http://193.140.136.26:8084", "http://193.140.136.26", "https://193.140.136.26:8084", "https://193.140.136.26", "*"));
+
         // Tüm header'lara izin ver
         config.setAllowedHeaders(Collections.singletonList("*"));
-        
+
         // Response header'ları expose et
         config.setExposedHeaders(Arrays.asList(
             "Access-Control-Allow-Origin",
@@ -64,16 +64,16 @@ public class CorsConfig implements WebMvcConfigurer {
             "Content-Length",
             "Authorization"
         ));
-        
+
         // Tüm HTTP metodlarına izin ver
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"));
-        
+
         // Preflight cache süresi
         config.setMaxAge(3600L);
-        
+
         // Tüm path'lere uygula
         source.registerCorsConfiguration("/**", config);
-        
+
         return new CorsFilter(source);
     }
 }

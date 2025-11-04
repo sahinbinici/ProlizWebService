@@ -25,26 +25,26 @@ public class SimpleCorsFilter implements Filter {
     @Override
     public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
             throws IOException, ServletException {
-        
+
         HttpServletResponse response = (HttpServletResponse) res;
         HttpServletRequest request = (HttpServletRequest) req;
-        
+
         String origin = request.getHeader("Origin");
         String requestMethod = request.getMethod();
         String requestURI = request.getRequestURI();
-        
-        logger.info("CORS Filter - Method: {}, Origin: {}, Path: {}", 
+
+        logger.info("CORS Filter - Method: {}, Origin: {}, Path: {}",
                     requestMethod, origin, requestURI);
-        
+
         // CORS header'larını ekle - MUTLAKA bu sırayla
-        response.addHeader("Access-Control-Allow-Origin", "*");
+        response.addHeader("Access-Control-Allow-Origin", "http://193.140.136.26:8084 http://193.140.136.26 https://193.140.136.26:8084 https://193.140.136.26 *");
         response.addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH");
         response.addHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, Pragma");
         response.addHeader("Access-Control-Expose-Headers", "Content-Type, Content-Length, Authorization, X-Total-Count");
         response.addHeader("Access-Control-Max-Age", "3600");
-        
+
         logger.info("CORS Headers added for: {}", requestURI);
-        
+
         // OPTIONS isteği için hemen yanıt dön
         if ("OPTIONS".equalsIgnoreCase(requestMethod)) {
             response.setStatus(HttpServletResponse.SC_OK);
@@ -53,10 +53,10 @@ public class SimpleCorsFilter implements Filter {
             logger.info("CORS Preflight handled - Returning 200 OK for: {}", requestURI);
             return;
         }
-        
+
         // Diğer istekleri devam ettir
         chain.doFilter(req, res);
-        
+
         logger.info("CORS Filter completed for: {}", requestURI);
     }
 
