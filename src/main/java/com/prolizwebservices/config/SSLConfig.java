@@ -93,8 +93,8 @@ public class SSLConfig {
             }
         };
         
-        factory.setConnectTimeout(30000); // 30 seconds  
-        factory.setReadTimeout(60000);    // 60 seconds
+        factory.setConnectTimeout(30000);  // 30 seconds  
+        factory.setReadTimeout(120000);   // 120 seconds (2 minutes) - Increased for large datasets
         
         restTemplate.setRequestFactory(factory);
         return restTemplate;
@@ -150,7 +150,7 @@ public class SSLConfig {
         };
         
         factory.setConnectTimeout(30000);
-        factory.setReadTimeout(60000);
+        factory.setReadTimeout(120000);  // 120 seconds (2 minutes)
         
         restTemplate.setRequestFactory(factory);
         return restTemplate;

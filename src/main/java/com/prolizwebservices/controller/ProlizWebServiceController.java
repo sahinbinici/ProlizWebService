@@ -40,7 +40,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
     allowCredentials = "false",
     maxAge = 3600
 )
-@Tag(name = "ProlizWebServices", description = "SOAP to REST adapter for Gaziantep University Student Information System")
+@Tag(name = "B-Main Services", description = "Core SOAP to REST services for distance education and authentication")
 public class ProlizWebServiceController {
 
     private final OgrenciWebServiceClient webServiceClient;
@@ -62,8 +62,8 @@ public class ProlizWebServiceController {
         @ApiResponse(responseCode = "400", description = "Invalid input parameters"),
         @ApiResponse(responseCode = "503", description = "Remote SOAP service unavailable")
     })
-    @PostMapping("/akademik-personel/sifre-kontrol")
-    public ResponseEntity<String> akademikPersonelSifreKontrol(
+    @PostMapping(value = "/akademik-personel/sifre-kontrol", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> akademikPersonelSifreKontrol(
             @Parameter(description = "Academic staff username (Sicil No)", required = true, example = "78555023")
             @RequestParam String kullaniciAdi,
             @Parameter(description = "Academic staff password (will be MD5 hashed)", required = true, example = "password123")
@@ -73,7 +73,16 @@ public class ProlizWebServiceController {
         validateNotEmpty(sifre, "sifre");
         
         String result = webServiceClient.akademikPersonelSifreKontrol(kullaniciAdi, sifre);
-        return ResponseEntity.ok(result);
+        
+        Map<String, Object> response = new HashMap<>();
+        boolean success = webServiceClient.parseSoapResponse(result);
+        response.put("success", success);
+        response.put("message", success ? 
+            "Akademik personel girişi başarılı" : "Sicil numarası veya şifre hatalı");
+        response.put("sicilNo", kullaniciAdi);
+        response.put("timestamp", java.time.LocalDateTime.now());
+        
+        return ResponseEntity.ok(response);
     }
 
     // 2. Student Authentication
@@ -99,8 +108,9 @@ public class ProlizWebServiceController {
         String result = webServiceClient.ogrenciSifreKontrol(ogrenciNo, sifre);
         
         Map<String, Object> response = new HashMap<>();
-        response.put("success", result.contains("<Success>true</Success>") || result.contains(">true<"));
-        response.put("message", response.get("success").equals(true) ? 
+        boolean success = webServiceClient.parseSoapResponse(result);
+        response.put("success", success);
+        response.put("message", success ? 
             "Öğrenci girişi başarılı" : "Kullanıcı adı veya şifre hatalı");
         response.put("studentNumber", ogrenciNo);
         response.put("timestamp", java.time.LocalDateTime.now());

@@ -243,14 +243,24 @@ public class OgrenciWebServiceClient {
      */
     public boolean parseSoapResponse(String soapResponse) {
         if (soapResponse == null || soapResponse.isEmpty()) {
+            logger.debug("SOAP response boş");
             return false;
         }
         
+        logger.debug("SOAP Response parsing: {}", soapResponse.length() > 500 ? 
+            soapResponse.substring(0, 500) + "..." : soapResponse);
+        
         // XML içinde success indicator'ları ara
-        return soapResponse.contains("<Success>true</Success>") || 
-               soapResponse.contains(">true<") ||
-               soapResponse.contains("success=\"true\"") ||
-               soapResponse.contains("result=\"true\"");
+        boolean result = soapResponse.contains("<Success>true</Success>") || 
+                        soapResponse.contains(">true<") ||
+                        soapResponse.contains("success=\"true\"") ||
+                        soapResponse.contains("result=\"true\"") ||
+                        // Ek pattern'ler ekleyelim
+                        soapResponse.toLowerCase().contains("<success>true</success>") ||
+                        soapResponse.toLowerCase().contains("success") && soapResponse.toLowerCase().contains("true");
+        
+        logger.debug("SOAP Response parse result: {}", result);
+        return result;
     }
 
     /**

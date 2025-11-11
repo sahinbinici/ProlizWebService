@@ -1,15 +1,13 @@
-version: '3.8'
-
 services:
   # Redis Cache
   redis:
     image: redis:7-alpine
     container_name: proliz-redis
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -18,6 +16,14 @@ services:
       retries: 3
     networks:
       - proliz-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 256M
 
   # MySQL Database
   mysql:
@@ -31,11 +37,11 @@ services:
       MYSQL_CHARACTER_SET_SERVER: utf8mb4
       MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
     ports:
-      - "3306:3306"
+      - "3308:3306"
     volumes:
       - mysql-data:/var/lib/mysql
       - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
-    command: --default-authentication-plugin=mysql_native_password --max_connections=200
+    command: --default-authentication-plugin=mysql_native_password --max_connections=100
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root_password_change_me}"]
@@ -44,6 +50,14 @@ services:
       retries: 5
     networks:
       - proliz-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
 
   # ProlizWebServices Application
   app:
@@ -52,7 +66,7 @@ services:
       dockerfile: Dockerfile
     container_name: proliz-app
     ports:
-      - "8083:8083"
+      - "8084:8083"
     environment:
       # Spring Profile
       SPRING_PROFILES_ACTIVE: docker
@@ -75,19 +89,29 @@ services:
       SOAP_SERVICE_USERNAME: ${SOAP_USERNAME:-ProLmsGan}
       SOAP_SERVICE_PASSWORD: ${SOAP_PASSWORD:--2020+Pro*Gan#}
       
+      # GAU External SOAP Service Credentials
+      SOAP_GAU_EXT_USERNAME: ${SOAP_GAU_EXT_USERNAME:-ProGauExtBim}
+      SOAP_GAU_EXT_PASSWORD: ${SOAP_GAU_EXT_PASSWORD:-#Pro_Gau!2019+}
+      
+      # SOAP Timeout Settings (increased for large datasets)
+      SOAP_TIMEOUT_CONNECT: 30000
+      SOAP_TIMEOUT_READ: 120000
+      SOAP_GAU_EXT_TIMEOUT_CONNECT: 30000
+      SOAP_GAU_EXT_TIMEOUT_READ: 120000
+      
       # Cache Configuration
       CACHE_TTL_SOAP: 86400
       CACHE_TTL_DERS: 3600
       CACHE_TTL_OGRENCI: 1800
       CACHE_DISK_DIR: /app/cache
-      CACHE_DISK_MAX_SIZE: 500
+      CACHE_DISK_MAX_SIZE: 250
       
       # Logging
       LOG_LEVEL_APP: INFO
       LOG_LEVEL_CLIENT: INFO
       
       # JVM Options
-      JAVA_OPTS: -Xmx2G -Xms512M -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+      JAVA_OPTS: -Xmx1G -Xms512M -XX:+UseG1GC -XX:MaxGCPauseMillis=200
     volumes:
       - app-cache:/app/cache
       - app-data:/app/data
@@ -106,6 +130,14 @@ services:
       start_period: 120s
     networks:
       - proliz-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
 
 volumes:
   redis-data:

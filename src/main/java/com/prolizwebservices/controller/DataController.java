@@ -47,7 +47,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
     allowCredentials = "false",
     maxAge = 3600
 )
-@Tag(name = "ProlizWebServices", description = "SOAP to REST adapter for Gaziantep University Student Information System")
+@Tag(name = "C-Data Services", description = "Cached data services with advanced filtering and search capabilities")
 public class DataController {
 
     private static final Logger logger = LoggerFactory.getLogger(DataController.class);
@@ -1376,7 +1376,7 @@ public class DataController {
             String soapResponse = webServiceClient.akademikPersonelSifreKontrol(sicilNo, sifre);
             
             // SOAP yanıtını parse et
-            boolean authenticated = parseSoapBooleanResponse(soapResponse);
+            boolean authenticated = webServiceClient.parseSoapResponse(soapResponse);
             
             if (authenticated) {
                 result.put("success", true);
@@ -1442,7 +1442,7 @@ public class DataController {
             String soapResponse = webServiceClient.ogrenciSifreKontrol(ogrenciNo, sifre);
             
             // SOAP yanıtını parse et
-            boolean authenticated = parseSoapBooleanResponse(soapResponse);
+            boolean authenticated = webServiceClient.parseSoapResponse(soapResponse);
             
             if (authenticated) {
                 result.put("success", true);

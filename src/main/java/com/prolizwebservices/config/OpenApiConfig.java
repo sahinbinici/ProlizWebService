@@ -35,7 +35,12 @@ public class OpenApiConfig {
                                 "- Academic staff authentication\n" +
                                 "- Course and program information\n" +
                                 "- Distance education data\n" +
-                                "- Academic schedules and transcripts\n\n" +
+                                "- Student statistics and demographics\n" +
+                                "- Active student listings with detailed information\n" +
+                                "- GAU External services integration\n\n" +
+                                "**Services:**\n" +
+                                "- **Main Services:** Core SOAP services for distance education\n" +
+                                "- **GAU External Services:** Extended services for statistics and student data\n\n" +
                                 "**Authentication:** Most endpoints require valid credentials through the authentication endpoints.")
                         .version("1.0.0")
                         .contact(new Contact()

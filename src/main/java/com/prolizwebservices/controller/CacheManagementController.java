@@ -29,7 +29,7 @@ import java.util.Map;
     allowCredentials = "false",
     maxAge = 3600
 )
-@Tag(name = "Cache Management", description = "Hybrid cache management and monitoring endpoints")
+@Tag(name = "E-Cache Management", description = "Hybrid cache management and monitoring endpoints")
 public class CacheManagementController {
 
     @Autowired

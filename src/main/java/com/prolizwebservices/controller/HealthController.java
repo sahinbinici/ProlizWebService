@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.prolizwebservices.service.DataCacheService;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 /**
  * Health check and basic status endpoint
  */
@@ -26,6 +28,7 @@ import com.prolizwebservices.service.DataCacheService;
     allowCredentials = "false",
     maxAge = 3600
 )
+@Tag(name = "Z-System Health", description = "System health check and status endpoints")
 public class HealthController {
 
     @Autowired
